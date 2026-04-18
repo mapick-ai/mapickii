@@ -54,19 +54,19 @@ Mapickii is the intelligent butler of the Mapick ecosystem. It bundles three mod
 ### One-line install (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh | bash
 ```
 
 Or with `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.0/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh | bash
 ```
 
 Project-local install:
 
 ```bash
-MAPICKII_LOCAL=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.0/install.sh)"
+MAPICKII_LOCAL=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh)"
 ```
 
 Pin a specific version:
