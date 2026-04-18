@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/mapickii_banner.png" alt="Mapickii Banner" width="720" />
+  <img src="assets/mapick_banner.png" alt="Mapickii Banner" width="720" />
 </p>
 
 <h1 align="center">Mapickii</h1>
