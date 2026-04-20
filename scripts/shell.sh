@@ -1122,7 +1122,7 @@ shift || true
 
 # Auto scan refresh: TTL check for commands that need network or local data display
 case "${COMMAND}" in
-  status|clean|workflow|daily|weekly|chat)
+  status|clean|workflow|daily|weekly)
     if _scan_needed; then _do_scan; fi
     ;;
 esac
@@ -1227,6 +1227,10 @@ case "${COMMAND}" in
       esac
     done
 
+    # V1 S1: default scope to 'both' when user doesn't specify.
+    # Advanced users can still pass --scope user|project for surgical removal.
+    [[ -z "$scope" ]] && scope="both"
+
     # Protection check (regardless of confirm)
     if _is_protected "$skill_id"; then
       echo "{\"error\":\"protected_skill\",\"skillId\":\"${skill_id}\",\"message\":\"${skill_id} is a protected skill and cannot be deleted\"}"
@@ -1256,14 +1260,8 @@ case "${COMMAND}" in
       paths_json+="{\"scope\":\"${ps}\",\"path\":\"${pp}\"}"
     done <<< "$paths_raw"
 
-    # scope omitted and two found -> ambiguous
-    if [[ -z "$scope" ]]; then
-      count="$(printf '%s\n' "$paths_raw" | grep -c .)"
-      if [[ "$count" -gt 1 ]]; then
-        echo "{\"error\":\"ambiguous_scope\",\"skillId\":\"${skill_id}\",\"paths\":[${paths_json}],\"message\":\"Found in both user and project scope; use --scope to specify\"}"
-        exit 0
-      fi
-    fi
+    # V1 S1: ambiguous_scope path removed. Default 'both' (assigned above)
+    # means "find it anywhere under user-level + project-level, remove all".
 
     # Dry-run: no --confirm
     if [[ $confirm -eq 0 ]]; then
@@ -1351,18 +1349,13 @@ weekly)
 
   clean:track)
     skill_id="${1:-}"
-    reason="${2:-}"
     if [[ -z "$skill_id" ]]; then
       echo '{"error":"missing_argument","message":"clean:track requires skillId argument"}'
       exit 0
     fi
 
-    # Build track request body (backend /event/track contract: action + skillId + userId + metadata)
-    if [[ -n "$reason" ]]; then
-      body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"${reason}\"}}"
-    else
-      body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"zombie_cleanup\"}}"
-    fi
+    # V1 C6: reason is always "zombie_cleanup" (no interactive reason prompt).
+    body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"zombie_cleanup\"}}"
     track_resp="$(_http POST /event/track "$body")"
 
     # Protected skill: track only, don't delete
@@ -1395,172 +1388,7 @@ weekly)
     echo "{\"intent\":\"clean:track\",\"skillId\":\"${skill_id}\",\"deleted\":[${deleted_json}],\"track\":${track_resp}}"
     ;;
 
-  chat)
-    msg="${1:-}"
-    if [[ -z "$msg" ]]; then
-      echo '{"error":"missing_argument","message":"chat requires message argument"}'
-      exit 0
-    fi
-    # JSON-escape quotes and backslashes in user message
-    msg_escaped="${msg//\\/\\\\}"
-    msg_escaped="${msg_escaped//\"/\\\"}"
-    _http POST /assistant/chat "{\"userId\":\"${USER_ID}\",\"message\":\"${msg_escaped}\"}"
-    ;;
-
-# Referral code management (unified entry: ref <code>)
-  referral|ref)
-    code="${1:-}"
-
-    if [[ -n "$code" ]]; then
-      resp="$(_http POST /user/referral/bind "{\"deviceFingerprint\":\"${USER_ID}\",\"referralCode\":\"${code}\"}")"
-      _extract_and_save_recommendations "$resp"
-
-      if echo "$resp" | grep -q '"statusCode"'; then
-        message="$(echo "$resp" | jq -r '.message // "Bind failed"')"
-        echo "{\"error\":\"bind_failed\",\"message\":\"${message}\"}"
-        exit 0
-      fi
-
-      success="$(echo "$resp" | jq -r '.success')"
-      if [[ "$success" == "true" ]]; then
-        referral_code="$(echo "$resp" | jq -r '.referralCode')"
-        referred_by="$(echo "$resp" | jq -r '.referredBy')"
-        _config_set referral_code "$referral_code"
-        _config_set referred_by "$referred_by"
-      fi
-    else
-      resp="$(_http GET "/user/referral/${USER_ID}")"
-      _extract_and_save_recommendations "$resp"
-      if echo "$resp" | grep -q '"statusCode"'; then
-        echo "$resp"
-        exit 0
-      fi
-    fi
-
-    referral_code="$(echo "$resp" | jq -r '.referralCode // ""')"
-    referred_by="$(echo "$resp" | jq -r '.referredBy // ""')"
-    referral_count="$(echo "$resp" | jq -r '.referralCount // 0')"
-    can_bind="$(echo "$resp" | jq -r '.canBind // false')"
-    mapick_id="$(echo "$resp" | jq -r '.mapickId // ""')"
-
-    if [[ "$can_bind" == "true" ]]; then
-      py_can_bind="True"
-    else
-      py_can_bind="False"
-    fi
-
-    local rec_json rec_msg
-    rec_json="$(_load_recommendations)"
-    rec_msg=""
-    if [[ -n "$rec_json" ]] && [[ "$rec_json" != "[]" ]]; then
-      rec_msg="$(echo "$rec_json" | python3 -c "import sys,json; recs=json.load(sys.stdin)[:3]; msg='Recommended installs\\n'; [msg+=f'{i+1}. {r.get(\"skillName\",\"?\")} - {r.get(\"reason\",\"\")}\\n' for i,r in enumerate(recs)]; print(msg)" 2>/dev/null)"
-    fi
-
-    python3 <<PYEOF
-referral_code = "${referral_code}"
-referred_by = "${referred_by}"
-referral_count = "${referral_count}"
-can_bind = ${py_can_bind}
-mapick_id = "${mapick_id}"
-bind_success = ${success:-False}
-rec_msg = """${rec_msg}"""
-
-print("Referral Code")
-print("===============")
-print(f"Mapick ID   {mapick_id}")
-print(f"Code        {referral_code}")
-print(f"Referred    {referral_count} people")
-print()
-if bind_success:
-    print("Referral code bound successfully")
-    print()
-if referred_by:
-    print(f"Referrer    {referred_by}")
-    print()
-    print("Already bound to a referrer, cannot re-bind")
-else:
-    print("Bind a referral code to earn rewards")
-    print()
-    print("Bind command:")
-    print("  ref <code>")
-if rec_msg:
-    print()
-    print(rec_msg)
-PYEOF
-;;
-
-  referral:bind|ref:bind)
-    code="${1:-}"
-    if [[ -z "$code" ]]; then
-      echo '{"error":"missing_argument","message":"ref bind requires referral code argument"}'
-      exit 0
-    fi
-    resp="$(_http POST /user/referral/bind "{\"deviceFingerprint\":\"${USER_ID}\",\"referralCode\":\"${code}\"}")"
-
-    if echo "$resp" | grep -q '"statusCode"'; then
-      # Error response
-      message="$(echo "$resp" | jq -r '.message // "Bind failed"')"
-      echo "{\"error\":\"bind_failed\",\"message\":\"${message}\"}"
-      exit 0
-    fi
-
-    # Success response
-    success="$(echo "$resp" | jq -r '.success')"
-    if [[ "$success" == "true" ]]; then
-      referral_code="$(echo "$resp" | jq -r '.referralCode')"
-      referred_by="$(echo "$resp" | jq -r '.referredBy')"
-      referrer_id="$(echo "$resp" | jq -r '.referrer.mapickId')"
-
-      # Write to CONFIG.md
-      _config_set referral_code "$referral_code"
-      _config_set referred_by "$referred_by"
-
-      python3 <<PYEOF
-referral_code = "${referral_code}"
-referred_by = "${referred_by}"
-referrer_id = "${referrer_id}"
-
-print("Referral code bound successfully")
-print()
-print("Referrer")
-print("===============")
-print(f"Mapick ID   {referrer_id}")
-print(f"Code        {referred_by}")
-print()
-print("Your Referral Code")
-print("===============")
-print(f"Code        {referral_code}")
-print()
-print("Reward: unlocks referral feature")
-print("   Invite friends to earn points")
-PYEOF
-    else
-      echo "$resp"
-    fi
-;;
-
-push:daily|push:weekly|push:off)
-    frequency="${COMMAND#push:}"
-    last="$(_config_get last_push_mode)"
-    if [[ "$last" == "$frequency" ]]; then
-      resp="{\"intent\":\"push:noop\",\"data\":{\"frequency\":\"${frequency}\",\"message\":\"Already in ${frequency} mode\"}}"
-      _inject_recommendations "$resp" "true"
-      exit 0
-    fi
-    case "$frequency" in
-      off)    push_text="disable push" ;;
-      weekly) push_text="switch to weekly push" ;;
-      daily)  push_text="daily push" ;;
-    esac
-    resp="$(_http POST /assistant/dialogue "{\"userId\":\"${USER_ID}\",\"text\":\"${push_text}\",\"platform\":\"plain\"}")"
-    _extract_and_save_recommendations "$resp"
-    if ! echo "$resp" | grep -q '"error"'; then
-      _config_set last_push_mode "$frequency"
-    fi
-    _inject_recommendations "$resp"
-    ;;
-
- "")
+  "")
 
 resp="$(_http GET "/assistant/status/${USER_ID}")"
     _extract_and_save_recommendations "$resp"
