@@ -421,119 +421,43 @@ except:
 }
 
 _welcome_json() {
+  # V1 first-install response. Lean JSON — no ASCII logo, no actions prompt,
+  # no /recommend/feed call (lazy-loaded via 'recommend' command in PR-4).
+  # AI is responsible for rendering in the user's conversation language.
   local device_fp="$(_config_get device_fp)"
-  local scan_json skills_json skills_count scanned_at
+  [[ -z "$device_fp" ]] && device_fp="$(_device_fp)"
 
+  local scan_json skills_json skills_count
   scan_json="$(_scan_to_json)"
   if [[ -n "$scan_json" ]] && command -v jq >/dev/null 2>&1; then
     skills_json="$(echo "$scan_json" | jq -c '.skills // []' 2>/dev/null || echo '[]')"
     skills_count="$(echo "$scan_json" | jq '.skills // [] | length' 2>/dev/null || echo 0)"
-    scanned_at="$(echo "$scan_json" | jq -r '.scanned_at // ""' 2>/dev/null || echo "")"
   else
     skills_json="[]"
     skills_count=0
-    scanned_at=""
   fi
 
   DEVICE_FP="${device_fp}" \
   SKILLS_JSON="${skills_json}" \
   SKILLS_COUNT="${skills_count}" \
-  SCANNED_AT="${scanned_at}" \
   python3 <<'PYEOF'
 import os, json
 
-device_fp    = os.environ.get("DEVICE_FP", "")
-skills_json  = os.environ.get("SKILLS_JSON", "[]")
-skills_count = int(os.environ.get("SKILLS_COUNT", "0") or "0")
-
 try:
-    skills = json.loads(skills_json)
+    skills = json.loads(os.environ.get("SKILLS_JSON", "[]"))
 except Exception:
     skills = []
 
-HR_LONG  = "=" * 40
-HR_SHORT = "=" * 12
-
-parts = []
-
-# Logo
-parts.append("███╗   ███╗ █████╗ ██████╗ ██╗ ██████╗██╗  ██╗")
-parts.append("████╗ ████║██╔══██╗██╔══██╗██║██╔════╝██║ ██╔╝")
-parts.append("██╔████╔██║███████║██████╔╝██║██║     █████╔╝")
-parts.append("██║╚██╔╝██║██╔══██║██╔=== ██║██║     ██╔═██╗")
-parts.append("██║ ╚═╝ ██║██║  ██║██║     ██║╚██████╗██║  ██╗")
-parts.append("╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝╚═╝  ╚═╝")
-parts.append("")
-
-# Header
-parts.append("Mapickii - Mapick Smart Assistant")
-parts.append(HR_LONG)
-parts.append("Status - Zombie Cleanup - Workflow - Daily/Weekly")
-parts.append("")
-
-# Core features
-parts.append("Core Features")
-parts.append(HR_SHORT)
-parts.append("Status Overview   Check your Skill library health")
-parts.append("Zombie Cleanup    One-click cleanup of unused Skills")
-parts.append("Workflow          Identify your frequent Skill combos")
-parts.append("Daily/Weekly      Track your usage rhythm")
-parts.append("")
-
-# Skill library
-parts.append("Your Skill Library")
-parts.append(HR_SHORT)
-if skills_count == 0:
-    parts.append("Installed   0")
-    parts.append("Blank canvas, start here")
-else:
-    names = [s.get("name", s.get("id", "?")) for s in skills[:5]]
-    shown = ", ".join(names)
-    if len(skills) > 5:
-        shown += f" ... +{len(skills)-5}"
-    parts.append(f"Installed   {skills_count}")
-    parts.append(f"List        {shown}")
-parts.append("")
-
-# Action bar
-parts.append("Pick one to start")
-parts.append(HR_LONG)
-parts.append("")
-parts.append("1. Register")
-parts.append("   Cross-device sync - data roaming - referral code")
-parts.append("")
-parts.append("2. Bind Existing")
-parts.append("   For users with an existing Mapick ID")
-parts.append("")
-parts.append("3. Use Now")
-parts.append("   Local identity - zero-config")
-parts.append("")
-
-# Privacy notice
-parts.append(HR_LONG)
-parts.append("Conversation content never leaves local machine")
-parts.append("   Only anonymous behavior data uploaded (skill_id + timestamp)")
-
-render = "\n".join(parts)
-render_escaped = render.replace("\n", "\\n")
+skill_names = [s.get("name", s.get("id", "?")) for s in skills[:5]]
 
 data = {
     "status": "first_install",
-    "is_new": True,
-    "welcome": {
-        "render": render_escaped
-    },
     "data": {
-        "deviceFingerprint": device_fp,
-        "skillsCount": skills_count,
-        "scannedAt": os.environ.get("SCANNED_AT", "")
+        "deviceFingerprint": os.environ.get("DEVICE_FP", ""),
+        "skillsCount": int(os.environ.get("SKILLS_COUNT", "0") or "0"),
+        "skillNames": skill_names,
     },
-    "actions": [
-        {"key": "1", "label": "Register", "hint": "Cross-device sync - data roaming", "command": "register"},
-        {"key": "2", "label": "Bind Existing", "hint": "For users with an existing Mapick ID", "command": "login"},
-        {"key": "3", "label": "Use Now", "hint": "Local identity - zero-config", "command": "skip-onboard"}
-    ],
-    "privacy": "Conversation content never leaves local machine; only anonymous behavior data uploaded (skill_id + timestamp)"
+    "privacy": "Anonymous by design. No registration. Run '/mapickii privacy status' to see what we track."
 }
 print(json.dumps(data, ensure_ascii=False))
 PYEOF
@@ -773,6 +697,36 @@ print(f"      windsurf: {bool_str(system['editors']['windsurf'])}")
 PYEOF
 }
 
+# ── C-02: Report scan diff as skill_install / skill_uninstall events ──
+# This fixes the V1 root cause: _do_scan never told the backend what the user
+# had installed. Result: skill_records table stayed empty, users saw
+# "you have 0 skills" even after scanning 20. Fix: on every scan, compute the
+# diff between old and new skill id sets, and POST one event per change.
+#
+# Args:
+#   $1 = old_ids   (compact JSON array of strings, use "[]" for bootstrap)
+#   $2 = new_ids   (compact JSON array of strings)
+_report_scan_events() {
+  local old_ids="${1:-[]}" new_ids="${2:-[]}"
+  local added removed
+  added="$(jq -cn --argjson o "$old_ids" --argjson n "$new_ids" '$n - $o' 2>/dev/null || echo '[]')"
+  removed="$(jq -cn --argjson o "$old_ids" --argjson n "$new_ids" '$o - $n' 2>/dev/null || echo '[]')"
+
+  # Report skill_install for each added skill
+  echo "$added" | jq -r '.[]?' 2>/dev/null | while IFS= read -r skill_id; do
+    [[ -z "$skill_id" ]] && continue
+    local body="{\"action\":\"skill_install\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"source\":\"scan\"}}"
+    _http POST /event/track "$body" >/dev/null 2>&1 || true
+  done
+
+  # Report skill_uninstall for each removed skill (detected local deletion)
+  echo "$removed" | jq -r '.[]?' 2>/dev/null | while IFS= read -r skill_id; do
+    [[ -z "$skill_id" ]] && continue
+    local body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"detected_removal\"}}"
+    _http POST /event/track "$body" >/dev/null 2>&1 || true
+  done
+}
+
 # ── Read scan data (parse YAML format from CONFIG.md) ──
 _scan_to_json() {
   CONFIG_FILE="$CONFIG_FILE" python3 <<PYEOF
@@ -929,12 +883,11 @@ _backup_skill() {
 }
 
 # ── First-use auto bootstrap ──────────────────────────
-# First-time check (any matched triggers it):
-#   - config.json does not exist
+# V1 bootstrap triggers when either:
+#   - CONFIG.md does not exist, OR
 #   - device_fp is empty
-#   - mapick_id is empty
-#   - mode is empty (onboarding not completed)
-# On first run: create device_fp + do one scan; don't auto-set mode (leave for onboarding).
+# On first run: create device_fp + do one scan. Identity/mode fields are V1-sunset
+# and no longer part of the bootstrap check.
 COMMAND="${1:-}"
 
 _need_bootstrap=0
@@ -942,7 +895,6 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
   _need_bootstrap=1
 else
   [[ -z "$(_config_get device_fp)" ]] && _need_bootstrap=1
-  [[ -z "$(_config_get mode)" ]] && _need_bootstrap=1
 fi
 
 if [[ ${_need_bootstrap} -eq 1 ]]; then
@@ -1123,21 +1075,47 @@ else:
 }
 
 _bundle_install() {
+  # V2 flow: fetch installCommands from backend, return them to AI for execution.
+  # AI runs each command, then calls bundle:track-installed to record success.
   local bundle_id="$1"
-  local skill_ids="${2:-}"
+  [[ -z "$bundle_id" ]] && { echo '{"error":"missing_argument","message":"bundle install requires bundleId"}'; return; }
 
-  resp="$(_http GET "/bundle/${bundle_id}")"
-  if echo "$resp" | grep -q '"error"'; then
-    echo "$resp"
+  local install_resp
+  install_resp="$(_http GET "/bundle/${bundle_id}/install?platform=openclaw")"
+
+  if echo "$install_resp" | grep -q '"error"'; then
+    echo "$install_resp"
     return
   fi
 
-  bundle_skills="$(echo "$resp" | jq -c '.skillIds // []' 2>/dev/null || echo '[]')"
+  echo "$install_resp" | python3 - <<'PYEOF' 2>/dev/null || echo '{"error":"parse_failed","message":"bundle install response malformed"}'
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    cmds = data.get("installCommands", []) or []
+    out = {
+        "intent": "bundle:install",
+        "bundleId": data.get("bundleId"),
+        "skillIds": data.get("skillIds", []),
+        "installCommands": cmds,
+        "installed": False,
+        "hint_for_ai": "Execute each installCommands[].command, then call 'bundle:track-installed <bundleId>'. See SKILL.md bundle section for failure handling."
+    }
+    print(json.dumps(out, ensure_ascii=False))
+except Exception as e:
+    print(json.dumps({"error": "parse_failed", "detail": str(e)}))
+PYEOF
+}
 
-  body="{\"userId\":\"${USER_ID}\",\"bundleId\":\"${bundle_id}\",\"skillIds\":${bundle_skills},\"installedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+_bundle_track_installed() {
+  # AI calls this after running all installCommands. shell records the event.
+  local bundle_id="$1"
+  [[ -z "$bundle_id" ]] && { echo '{"error":"missing_argument","message":"bundle:track-installed requires bundleId"}'; return; }
+
+  local body="{\"action\":\"bundle_installed\",\"bundleId\":\"${bundle_id}\",\"userId\":\"${USER_ID}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+  local track_resp
   track_resp="$(_http POST /event/track "$body")"
-
-  echo "{\"intent\":\"bundle:install\",\"bundleId\":\"${bundle_id}\",\"skillIds\":${bundle_skills},\"track\":${track_resp}}"
+  echo "{\"intent\":\"bundle:track-installed\",\"bundleId\":\"${bundle_id}\",\"tracked\":true,\"backend\":${track_resp}}"
 }
 
 shift || true
@@ -1150,100 +1128,34 @@ case "${COMMAND}" in
 esac
 
 case "${COMMAND}" in
-  # Identity management
-  register)
-    resp="$(_http POST /user/identity "{\"deviceFingerprint\":\"${USER_ID}\"}")"
-    # Save returned mapick_id, referral_code, referredBy to config
-    if command -v jq >/dev/null 2>&1; then
-      mp_id="$(echo "$resp" | jq -r '.mapickId // empty' 2>/dev/null)"
-      ref_code="$(echo "$resp" | jq -r '.referralCode // empty' 2>/dev/null)"
-      referred_by="$(echo "$resp" | jq -r '.referredBy // empty' 2>/dev/null)"
-      if [[ -n "$mp_id" ]]; then
-        _config_set mapick_id "$mp_id"
-        _config_set mode registered
-      fi
-      if [[ -n "$ref_code" ]]; then
-        _config_set referral_code "$ref_code"
-      fi
-      if [[ -n "$referred_by" ]]; then
-        _config_set referred_by "$referred_by"
-      fi
-    fi
-    echo "$resp"
-    ;;
-
-identity|id)
-    resp="$(_http GET "/user/identity/${USER_ID}")"
-    echo "$resp"
-    ;;
-
-  identity:bind|login)
-    mp="${1:-}"
-    if [[ -z "$mp" ]]; then
-      echo '{"error":"missing_argument","message":"login requires Mapick ID argument"}'
-      exit 0
-    fi
-    resp="$(_http POST /user/identity "{\"deviceFingerprint\":\"${USER_ID}\",\"mapickId\":\"${mp}\"}")"
-    if echo "$resp" | grep -q '"statusCode"'; then
-      echo "$resp"
-      exit 0
-    fi
-    # Save to config
-    mp_id="$(echo "$resp" | jq -r '.mapickId // empty')"
-    ref_code="$(echo "$resp" | jq -r '.referralCode // empty')"
-    referred="$(echo "$resp" | jq -r '.referredBy // empty')"
-    if [[ -n "$mp_id" ]]; then
-      _config_set mapick_id "$mp_id"
-      _config_set mode bound
-    fi
-    if [[ -n "$ref_code" ]]; then
-      _config_set referral_code "$ref_code"
-    fi
-    if [[ -n "$referred" ]]; then
-      _config_set referred_by "$referred"
-    fi
-    echo "$resp"
-    ;;
-
-  identity:bind)
-    mp_id="${1:-}"
-    if [[ -z "$mp_id" ]]; then
-      echo '{"error":"missing_argument","message":"identity:bind requires Mapick ID argument"}'
-      exit 0
-    fi
-    resp="$(_http POST /user/identity "{\"deviceFingerprint\":\"${USER_ID}\",\"mapickId\":\"${mp_id}\"}")"
-    # On success (no error), save mapick_id to config
-    if ! echo "$resp" | grep -q '"error"'; then
-      _config_set mapick_id "$mp_id"
-      _config_set mode bound
-    fi
-    echo "$resp"
-    ;;
-
-  skip-onboard)
-    _config_set mode local
-    echo "{\"intent\":\"skip-onboard\",\"data\":{\"deviceFingerprint\":\"${USER_ID}\",\"mode\":\"local\"}}"
+  # Identity (debug only) — returns local device_fp; no backend call.
+  # V1 has no registration/login/mapick_id; device_fp is the only anonymous ID.
+  identity|id)
+    local_dfp="$(_config_get device_fp)"
+    [[ -z "$local_dfp" ]] && local_dfp="$(_device_fp)"
+    echo "{\"intent\":\"identity\",\"deviceFingerprint\":\"${local_dfp}\",\"mode\":\"local\"}"
     ;;
 
   init)
+    # V1 init flow: two states (has last_init_at / not). No mode tracking.
+    # C-02 integration: report skill_install/skill_uninstall events on every
+    # scan diff so the backend's skill_records table stays in sync.
     now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    current_mode="$(_config_get mode)"
     last_init_at="$(_config_get last_init_at)"
 
-    if [[ -z "${current_mode}" ]]; then
+    # First install: bootstrap scan + report every scanned skill as install
+    if [[ -z "${last_init_at}" ]]; then
+      _do_scan
+      scan_json="$(_scan_to_json)"
+      new_ids_bootstrap="$(echo "$scan_json" | jq -c '[.skills // [] | .[].id]' 2>/dev/null || echo '[]')"
+      # C-02: bootstrap reports everything as new install (old_ids = [])
+      _report_scan_events '[]' "$new_ids_bootstrap"
+      _config_set last_init_at "${now_utc}"
       _welcome_json
       exit 0
     fi
 
-    if [[ -z "${last_init_at}" ]]; then
-      _config_set last_init_at "${now_utc}"
-      scan_json="$(_scan_to_json)"
-      skills_count="$(echo "$scan_json" | jq '.skills // [] | length' 2>/dev/null || echo 0)"
-      scanned_at="$(echo "$scan_json" | jq -r '.scanned_at // ""' 2>/dev/null || echo "")"
-      echo "{\"status\":\"initialized\",\"is_new\":true,\"data\":{\"mode\":\"${current_mode}\",\"mapickId\":$([[ -n "$(_config_get mapick_id)" ]] && echo "\"$(_config_get mapick_id)\"" || echo null),\"deviceFingerprint\":\"$(_config_get device_fp)\",\"skillsCount\":${skills_count},\"scannedAt\":\"${scanned_at}\"}}"
-      exit 0
-    fi
-
+    # 30-minute idempotency window
     last_epoch="$(_iso_to_epoch "$last_init_at")"
     now_epoch="$(date -u +%s)"
     minutes_elapsed=$(( (now_epoch - last_epoch) / 60 ))
@@ -1253,6 +1165,7 @@ identity|id)
       exit 0
     fi
 
+    # Re-scan + diff + C-02 event reporting
     scan_json="$(_scan_to_json)"
     old_ids="$(echo "$scan_json" | jq -c '[.skills // [] | .[].id] | sort' 2>/dev/null || echo '[]')"
 
@@ -1261,6 +1174,10 @@ identity|id)
 
     scan_json="$(_scan_to_json)"
     new_ids="$(echo "$scan_json" | jq -c '[.skills // [] | .[].id] | sort' 2>/dev/null || echo '[]')"
+
+    # C-02: report diff events (added → skill_install, removed → skill_uninstall)
+    _report_scan_events "$old_ids" "$new_ids"
+
     added="$(jq -cn --argjson o "$old_ids" --argjson n "$new_ids" '$n - $o')"
     removed="$(jq -cn --argjson o "$old_ids" --argjson n "$new_ids" '$o - $n')"
     changed_count="$(jq -n --argjson a "$added" --argjson r "$removed" '($a | length) + ($r | length)')"
@@ -1665,36 +1582,35 @@ resp="$(_http GET "/assistant/status/${USER_ID}")"
 
   bundle:install|bundle-install)
     bundle_id="${1:-}"
-    skill_ids="${2:-}"
     if [[ -z "$bundle_id" ]]; then
       echo '{"error":"missing_argument","message":"bundle install requires bundle ID argument"}'
       exit 0
     fi
-    _bundle_install "$bundle_id" "$skill_ids"
+    _bundle_install "$bundle_id"
+    ;;
+
+  bundle:track-installed|bundle-track-installed)
+    # Called by AI after executing every installCommand from _bundle_install.
+    # Records bundle_installed event to backend.
+    _bundle_track_installed "${1:-}"
     ;;
 
 help|--help|-h)
 
 cat >&2 <<'USAGE'
-Mapickii - Mapick Smart Assistant (M1+M2+M3)
+Mapickii - Mapick Smart Assistant (V1)
 
 Usage: bash shell.sh <command> [args...]
 
-Identity:
-  register              Register new identity
-  id                    View current identity
-  login <MP-ID>         Bind existing Mapick ID
-  skip-onboard          Skip registration, use local mode
-
-Referral:
-  ref                   View referral info
-  ref <code>            Bind referral code (only once)
+Identity (debug only):
+  id                        View local device fingerprint
 
 Bundle recommendations (M3):
   bundle                    List bundles
   bundle <id>               Bundle details
   bundle:recommend          Recommend bundles
-  bundle:install <id>       Install bundle
+  bundle:install <id>       Fetch install commands (AI executes, then calls bundle:track-installed)
+  bundle:track-installed <id>  Record successful bundle install to backend
 
 Lifecycle (M1):
   scan                      Scan local environment

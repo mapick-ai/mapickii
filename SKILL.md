@@ -56,36 +56,38 @@ R=$(bash scripts/shell.sh init 2>/dev/null); echo "$R"
 | `rescanned` + `changed:false` | 到期重扫但无变化                       | 完全静默                                                                |
 | `skip`                        | 距上次 init 不足 30 分钟               | 完全静默                                                                |
 
-### 首次欢迎（`status: "first_install"`）
+### First install rendering (`status: "first_install"`)
 
-Shell 返回结构化 JSON，`welcome.render` 字段包含报纸风格的 Markdown：
+Shell returns a lean JSON:
 
 ```json
 {
   "status": "first_install",
-  "welcome": { "render": "..." },
-  "data": { "deviceFingerprint": "...", "skillsCount": 3 },
-  "actions": [
-    { "key": "1", "label": "注册账号", "command": "register" },
-    { "key": "2", "label": "绑定已有", "command": "login" },
-    { "key": "3", "label": "立即使用", "command": "skip-onboard" }
-  ]
+  "data": {
+    "deviceFingerprint": "...",
+    "skillsCount": 3,
+    "skillNames": ["tasa", "mapick", "stage"]
+  },
+  "privacy": "Anonymous by design. No registration. ..."
 }
 ```
 
-Claude **直接输出 `welcome.render` 原文**，然后追加：
+**Render in the user's conversation language** (English reference below):
 
-```
-回复 **1**、**2** 或 **3** 开始。
-```
+1. Greet warmly, in one sentence. Example: "Mapickii is ready."
+2. Say it scanned the environment and found `skillsCount` skills. If
+   `skillsCount > 0`, list up to 5 from `skillNames`. If `0`, say the canvas
+   is empty and Mapickii can help them discover skills.
+3. Mention what's next in one short line. Example: "Ask me anything naturally,
+   or try `/mapickii recommend` to see what might help you."
+4. Include the one-line `privacy` note verbatim (or translate literally —
+   its substance matters: anonymous, no registration).
 
-等待用户回复：
-
-- **1** → 执行 `register`（API 返回 mapickId → 写入 config → mode=registered）
-- **2** → 追问「请输入你的 Mapick ID（MP-xxxxxxxx）」；收到后执行 `login <MP-ID>`
-- **3** → 执行 `skip-onboard`（mode=local）
-
-**重点：first_install 是幂等的** —— 用户不回复就关对话，下次还会收到 first_install（直到 mode 被设置）。
+**Do not**:
+- Render any ASCII logo (shell doesn't send one anymore).
+- Prompt the user to pick 1/2/3 for registration/login/skip — V1 has no
+  registration flow. `deviceFingerprint` is the only identity.
+- Call any follow-up command automatically; wait for the user.
 
 ## 执行方式
 
@@ -134,50 +136,57 @@ R=$(bash scripts/shell.sh <command> [args...] 2>/dev/null); echo "$R"
 - 不能绑定自己的推荐码
 - 绑定成功后推荐人 `referralCount += 1`
 
-### 套装推荐（M3）
+### Bundle recommendations (M3)
 
-套装推荐解决「单点推荐」的局限，用户不只需要一个 Skill，需要完成完整工作流的一套工具。
+Bundles solve the single-skill-recommend limit: users often need a cluster of
+skills to complete a workflow.
 
-| 用户输入                        | 执行                | 说明                       |
-| ------------------------------- | ------------------- | -------------------------- |
-| `/mapickii bundle`              | bundle              | 套装列表                   |
-| `/mapickii bundle <id>`         | bundle <id>         | 套装详情                   |
-| `/mapickii bundle recommend`    | bundle:recommend    | 推荐套装（基于已装 Skill） |
-| `/mapickii bundle install <id>` | bundle:install <id> | 安装套装                   |
+| User input                      | Shell command         | Notes                                  |
+| ------------------------------- | --------------------- | -------------------------------------- |
+| `/mapickii bundle`              | bundle                | List bundles                           |
+| `/mapickii bundle <id>`         | bundle <id>           | Bundle detail                          |
+| `/mapickii bundle recommend`    | bundle:recommend      | Recommend bundles based on installs    |
+| `/mapickii bundle install <id>` | bundle:install <id>   | Fetch install commands (two-step flow) |
+| (internal)                      | bundle:track-installed <id> | AI calls after executing install commands |
 
-**套装触发条件：**
+**Bundle install — two-step flow** (V1, by design):
 
-1. 用户装了套装中的触发 Skill → 立即推荐
-2. 用户装了套装中 25%-75% 的 Skill → 推荐补全
-3. 用户通过 Onboarding 选择场景 → 推荐对应套装
-
-**套装数据结构：**
+**Step 1**: `bash shell.sh bundle:install <bundleId>` returns:
 
 ```json
 {
+  "intent": "bundle:install",
   "bundleId": "fullstack-dev",
-  "name": "全栈开发者套装",
-  "skillIds": ["github-ops", "docker-compose", "api-testing"],
-  "triggerSkillIds": ["github-ops"],
-  "targetAudience": "全栈开发者"
+  "installCommands": [
+    { "skillId": "github-ops",    "command": "clawhub install github-ops" },
+    { "skillId": "docker-compose","command": "clawhub install docker-compose" }
+  ],
+  "installed": false
 }
 ```
 
-**套装渲染模板：**
+**Step 2**: AI executes each `installCommands[i].command` in the user's shell,
+tracks per-command result, then calls `bash shell.sh bundle:track-installed <bundleId>`.
 
-```
-🗂️ 全栈开发者套装
+**Step 3**: Report summary to the user in their language:
+"Installed N of M skills from bundle <name>."
 
-你已经装了 2/4 个
-✅ GitHub Ops
-✅ Docker 管理
+#### Failure handling (AI must follow this playbook)
 
-推荐补全:
-1. ⬜ CI/CD Pipeline
-2. ⬜ AI 代码审查
+| Failure                          | What to do                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `clawhub: command not found`     | Stop; tell user OpenClaw CLI is missing (install from https://openclaw.io); ask whether to retry |
+| Network timeout / DNS fail       | Skip current command, continue with next; summarize network failures at end with retry hint      |
+| Permission denied                | Report directory; suggest `sudo` or writable path; **don't** auto-sudo                           |
+| "already installed" (exit 0)     | Count as success                                                                                 |
+| Unknown error                    | Report first 200 chars of stderr; continue with remaining commands                               |
 
-💡 回复「安装套装」一键补全
-```
+If **all** commands fail and nothing installs, **do not** call
+`bundle:track-installed` (don't pollute backend with a failed install event).
+
+Rendering: use skill names + short per-item status (✅ installed / ⚠️ failed with
+short reason). Render in the user's language — the English examples above are
+reference only.
 
 ### 推送频率
 
