@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ── Constants ─────────────────────────────────────────
-API_BASE="${MAPICKII_API_BASE:-http://173.212.232.251:3010/api/v1}"
+API_BASE="${MAPICKII_API_BASE:-https://api.mapick.ai/v1}"
 
 # Mapickii install path (parent of scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,36 +15,13 @@ CONFIG_FILE="${CONFIG_DIR}/CONFIG.md"
 # Detect current CLI environment and set skill scan path
 # Priority: CONFIG_DIR location > env vars > default OpenCode
 _detect_skills_base() {
-  # 1. Decide by install path
-  if [[ "${CONFIG_DIR}" == "${HOME}/.openclaw/skills/mapickii" ]]; then
-    echo "${HOME}/.openclaw/skills"
-    return
-  fi
-  if [[ "${CONFIG_DIR}" == "${HOME}/.claude/skills/mapickii" ]]; then
-    echo "${HOME}/.claude/skills"
-    return
-  fi
-
-  # 2. Check project-level install
-  if [[ -d "${CONFIG_DIR}/../../.openclaw/skills" ]]; then
-    cd "${CONFIG_DIR}/../../.openclaw/skills" && pwd
-    return
-  fi
-  if [[ -d "${CONFIG_DIR}/../../.claude/skills" ]]; then
-    cd "${CONFIG_DIR}/../../.claude/skills" && pwd
-    return
-  fi
-
-  # 3. Default OpenCode
-  echo "${HOME}/.claude/skills"
+  # V1 scope: OpenClaw only (see plan/pr1/skill.md §1.3).
+  echo "${HOME}/.openclaw/skills"
 }
 
 SKILLS_BASE_DIR="$(_detect_skills_base)"
 
 MAPICKII_INIT_INTERVAL_MINUTES="${MAPICKII_INIT_INTERVAL_MINUTES:-30}"
-
-MAPICKII_API_KEY="${MAPICKII_API_KEY:-${MAPICK_API_KEY:-5c4b9615136a6b85e27b47ea6b1d13c4}}"
-MAPICKII_API_SECRET="${MAPICKII_API_SECRET:-${MAPICK_API_SECRET:-65301d4e3193f7f3fc79700e97445070afbdd256ad314cc0b7e317a8585c89f8}}"
 
 # ── CONFIG.md read/write (YAML format) ────────────────
 _ensure_config() {
@@ -337,14 +314,13 @@ _http() {
   local method="$1" path="$2" body="${3:-}"
   local url="${API_BASE}${path}"
   local tmp http_code
+  local device_fp="${USER_ID:-}"
 
-  # Build auth headers (skip if API_KEY/API_SECRET not set)
+  # v2.0 auth: x-device-fp header (16-char lowercase hex)
+  # Backend FpOrApiKeyGuard recognises this and derives userId server-side.
   local auth_args=()
-  if [[ -n "${MAPICKII_API_KEY}" ]]; then
-    auth_args+=(-H "api-key: ${MAPICKII_API_KEY}")
-  fi
-  if [[ -n "${MAPICKII_API_SECRET}" ]]; then
-    auth_args+=(-H "api-secret: ${MAPICKII_API_SECRET}")
+  if [[ -n "${device_fp}" ]]; then
+    auth_args+=(-H "x-device-fp: ${device_fp}")
   fi
 
   tmp="$(mktemp)"
@@ -682,15 +658,14 @@ import json
 from datetime import datetime, timezone
 
 ts = os.environ.get("SCAN_TS", "")
-skills_base = os.environ.get("SKILLS_BASE_DIR", os.path.expanduser("~/.claude/skills"))
+skills_base = os.environ.get("SKILLS_BASE_DIR", os.path.expanduser("~/.openclaw/skills"))
 
-# Scan skills (deduplicated)
+# Scan skills (OpenClaw only — V1 scope decision)
 skills = []
 seen_ids = set()
 skill_dirs = [
-    skills_base,
-    os.path.join(os.getcwd(), ".claude/skills"),
-    os.path.join(os.getcwd(), ".openclaw/skills")
+    os.path.expanduser("~/.openclaw/skills"),
+    os.path.join(os.getcwd(), ".openclaw/skills"),
 ]
 
 for root in skill_dirs:
@@ -933,9 +908,10 @@ _is_protected() {
 _scan_find_paths() {
   # Usage: _scan_find_paths <skillId>
   # Outputs one "scope:path" per line (scopes: user|project)
+  # V1 scope: OpenClaw only.
   local id="$1"
-  local user_path="${HOME}/.claude/skills/${id}"
-  local project_path="$(pwd)/.claude/skills/${id}"
+  local user_path="${HOME}/.openclaw/skills/${id}"
+  local project_path="$(pwd)/.openclaw/skills/${id}"
   [[ -d "$user_path" ]] && echo "user:${user_path}"
   [[ -d "$project_path" ]] && echo "project:${project_path}"
   return 0
@@ -1735,7 +1711,7 @@ Push frequency:
   push:daily | push:weekly | push:off
 
 Environment variables:
-  MAPICKII_API_BASE    Backend API prefix (default http://173.212.232.251:3010/api/v1)
+  MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai/v1)
 USAGE
     echo '{"error":"usage","message":"see stderr"}'
     ;;
