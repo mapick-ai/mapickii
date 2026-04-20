@@ -1423,6 +1423,78 @@ resp="$(_http GET "/assistant/status/${USER_ID}")"
     _bundle_track_installed "${1:-}"
     ;;
 
+  # ── Recommendation & Discovery (B1 / F1) ──
+  recommend)
+    # Fetch personalized skill recommendations from backend v2 feed.
+    # Backend: GET /recommend/feed (DeviceFp guarded, 60/h rate limit)
+    # Returns v2 shape: items[] each with installCommands / reasonEn /
+    # peerUsageEn / matchType / installCount / safetyGrade / alternatives / recId / score
+    limit="${1:-5}"
+    resp="$(_http GET "/recommend/feed?limit=${limit}")"
+
+    if echo "$resp" | grep -q '"error"'; then
+      echo "$resp"
+      exit 0
+    fi
+
+    items_count="$(echo "$resp" | jq '.items // [] | length' 2>/dev/null || echo 0)"
+    if [[ "$items_count" -eq 0 ]]; then
+      echo "{\"intent\":\"recommend\",\"items\":[],\"emptyReason\":\"no_recommendations_yet\"}"
+      exit 0
+    fi
+
+    # Cache items for 24h so follow-up queries don't burn rate limit
+    items="$(echo "$resp" | jq -c '.items' 2>/dev/null || echo '[]')"
+    _save_recommendations "$items" >/dev/null 2>&1 || true
+
+    echo "$resp" | jq -c '{intent: "recommend", items: .items, cachedFor: "24h"}'
+    ;;
+
+  search)
+    # Keyword search against ClawHub via backend.
+    # Backend: GET /skill/live-search (DeviceFp guarded, 30/min rate limit)
+    query="${1:-}"
+    if [[ -z "$query" ]]; then
+      echo '{"intent":"search","error":"missing_argument","hint":"Usage: search <keyword>"}'
+      exit 0
+    fi
+    search_limit="${2:-10}"
+
+    # URL-encode the query (Python stdlib handles CJK / punctuation cleanly)
+    encoded_query="$(QUERY="$query" python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["QUERY"], safe=""))')"
+    resp="$(_http GET "/skill/live-search?query=${encoded_query}&limit=${search_limit}")"
+
+    if echo "$resp" | grep -q '"error"'; then
+      echo "$resp"
+      exit 0
+    fi
+
+    items_count="$(echo "$resp" | jq '.items // [] | length' 2>/dev/null || echo 0)"
+    if [[ "$items_count" -eq 0 ]]; then
+      QUERY="$query" jq -cn --arg q "$query" '{intent:"search", query:$q, items:[], emptyReason:"no_matches"}'
+      exit 0
+    fi
+
+    echo "$resp" | jq -c --arg q "$query" '{intent: "search", query: $q, items: .items}'
+    ;;
+
+  recommend:track|recommend-track)
+    # Track user's response to a recommendation. Backend uses this to tune
+    # future feeds. Valid actions: shown / click / install / installed /
+    # ignore / not_interested. Called by AI after executing installCommand.
+    rec_id="${1:-}"
+    skill_id="${2:-}"
+    track_action="${3:-}"
+    if [[ -z "$rec_id" || -z "$skill_id" || -z "$track_action" ]]; then
+      echo '{"intent":"recommend:track","error":"missing_argument","hint":"Usage: recommend:track <recId> <skillId> <action>"}'
+      exit 0
+    fi
+
+    body="{\"userId\":\"${USER_ID}\",\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
+    _http POST /recommend/track "$body" >/dev/null 2>&1 || true
+    echo "{\"intent\":\"recommend:track\",\"tracked\":true,\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
+    ;;
+
 help|--help|-h)
 
 cat >&2 <<'USAGE'
@@ -1440,19 +1512,20 @@ Bundle recommendations (M3):
   bundle:install <id>       Fetch install commands (AI executes, then calls bundle:track-installed)
   bundle:track-installed <id>  Record successful bundle install to backend
 
-Lifecycle (M1):
+Recommendation & Discovery:
+  recommend [limit]              Personalized skill recommendations (default 5, cached 24h)
+  search <keyword> [limit]       Search skills by keyword (default 10)
+  recommend:track <recId> <skillId> <action>  Track feedback (install/ignore/...)
+
+Lifecycle:
   scan                      Scan local environment
   status                    Skill status overview
   clean                     Zombie skill list
-  clean:track <skillId> [reason]  Record uninstall event
-  uninstall <skillId> [--scope user|project|both] [--confirm]  Uninstall and remove local skill
+  clean:track <skillId>     Record zombie cleanup event (reason = zombie_cleanup)
+  uninstall <skillId> [--scope user|project|both] [--confirm]  Uninstall and remove local skill (default scope: both)
   workflow                  Workflow analysis
   daily                     Daily digest
   weekly                    Weekly report
-  chat <message>            Natural language fallback
-
-Push frequency:
-  push:daily | push:weekly | push:off
 
 Environment variables:
   MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai/v1)

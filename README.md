@@ -94,6 +94,13 @@ After install, use `/mapickii <command>` inside your AI tool:
 | `/mapickii weekly`     | Weekly report (summary + trends)                                  |
 | `/mapickii scan`       | Rescan local Skills                                               |
 
+### Recommendation & Discovery
+
+| Command                           | Description                                               |
+| --------------------------------- | --------------------------------------------------------- |
+| `/mapickii recommend [limit]`     | Personalized skill recommendations (default 5, cached 24h) |
+| `/mapickii search <keyword>`      | Search skills by keyword                                  |
+
 ### Bundles (M3)
 
 | Command                         | Description                                      |

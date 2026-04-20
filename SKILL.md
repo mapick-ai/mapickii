@@ -15,13 +15,91 @@ conversation language.
 
 ## 1. Recommendation & Discovery
 
-**Status: placeholder in this PR. The commands `/mapickii recommend` and
-`/mapickii search` land in PR-4.**
+**Why this is first**: Mapickii's core value is helping users find skills they
+don't have but should. Everything else is secondary.
 
-When a user asks about what skills to install, what they're missing, or asks
-for a recommendation, this is the primary chapter to consult. Until PR-4 ships,
-AI can only tell the user "recommendation command is coming soon; try
-`/mapickii status` to see your current library."
+### Intent: recommend
+
+Reference triggers (English): recommend, suggest, find skill, what should I
+install, best skills, what am I missing, any suggestions, discover, skills for
+me, good skills.
+
+**Match in ANY language** — recognize equivalents in whatever language the user
+speaks. Only treat this as the `recommend` intent when the user asks about
+**skills / tools / what to install** (not general-purpose "recommend a book").
+
+Shell command: `bash shell.sh recommend [limit]`
+Backend: `GET /recommend/feed?limit=5` (DeviceFp guarded, 60/h rate limit)
+
+### Intent: search
+
+Reference triggers (English): search, find, look for, is there a skill for,
+find a skill that, anything for X.
+
+**Match in ANY language**.
+
+Shell command: `bash shell.sh search <keyword> [limit]`
+Backend: `GET /skill/live-search?query=&limit=10` (DeviceFp guarded, 30/min)
+
+### Rendering (recommend)
+
+When shell returns `{ intent: "recommend", items: [...] }`:
+
+1. **Filter out items with `score < 0.4`** — they're too weak to surface.
+2. **Open with one sentence**: "I found N skills that might help you."
+3. **Show 3 items max**. For each item:
+   - Skill name
+   - One-line description (translate from `reasonEn` to the user's language)
+   - Human-friendly install count ("23K installs")
+   - Confidence phrase derived from `score`:
+     - `score > 0.7` → "highly recommended" (localized)
+     - `0.4 ≤ score ≤ 0.7` → "might be useful" (localized)
+   - Safety badge: 🟢 A / 🟡 B / 🔴 C from `safetyGrade`. If `C`, mention the
+     top entry from `alternatives[]`.
+4. **Close** with a call-to-action: "Reply with 1-3 to install, or ask for more."
+
+**Never** show raw `score` numbers (0.85, 0.62, etc.) to the user — they're
+meaningless. Always translate to the confidence phrase above.
+
+### Rendering (search)
+
+When shell returns `{ intent: "search", items: [...] }`:
+
+**If `items` is empty** (empty array or `emptyReason: "no_matches"`), render
+this template (translate to user's language):
+
+```
+I couldn't find any skills matching "<query>". Try:
+
+- A broader keyword — "git" instead of "github-ops-advanced"
+- A category — "testing" / "deployment" / "analytics"
+- Or let me recommend based on what you already have: /mapickii recommend
+
+Got a skill name in mind but spelled differently? Tell me and I'll search again.
+```
+
+**Otherwise** render like `recommend` above (same score filter, same confidence
+phrases, same safety badges, 3-5 items max).
+
+### User says "install it" / "yes" / "1"
+
+After rendering a recommend/search result, wait for the user's reply. On reply:
+
+1. Identify the target item from the last rendered list (by number, name, or
+   natural-language reference).
+2. From the item's `installCommands[]`, pick the entry where `platform` is
+   `openclaw` and run that `command` in the user's shell.
+3. On success, call `bash shell.sh recommend:track <recId> <skillId> installed`
+   so the backend can tune future recommendations.
+4. On failure, reply with the error (translated), and suggest retry or skip.
+5. Confirm to user: "✅ {skillName} installed. Want to see more?"
+
+### Caching
+
+Shell caches the last `recommend` response for 24h via `_save_recommendations`.
+If the user asks for recommendations again within 24h, shell serves the cached
+list (no rate-limit burn). Force refresh: pass an explicit limit argument
+(e.g. `recommend 10`) which goes through the full backend call.
 
 ---
 
