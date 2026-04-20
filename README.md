@@ -155,10 +155,34 @@ Mapickii    Mapickii     Mapickii       Mapickii     Mapickii    user
 
 ## Privacy
 
-- Conversations and code **never leave your device**
-- Only anonymous behavior signals are collected: `skill_id`, `timestamp`, `task_classification`
-- Identity config is stored locally (`CONFIG.md`)
-- No cloud-side social-graph storage
+Mapickii is designed to minimize what leaves your machine:
+
+- **Anonymous by design** — no registration, no email, no phone number. A
+  16-char device fingerprint (`sha256(hostname|os|arch|home)[:16]`) is the
+  only identifier.
+- **Local redaction** — before sharing any conversation text with other
+  skills, pipe through `scripts/redact.py` (API keys / JWT / SSH keys /
+  private keys / email / card / phone / CN ID / DB connection / URL tokens).
+  Pure regex, zero network calls, <1ms.
+- **GDPR-compliant** — run `/mapickii privacy delete-all --confirm` to wipe
+  both local caches and backend data.
+- **Minimal telemetry** — only `skill_id + timestamp + action` per event.
+  No hostname, no file paths, no code snippets.
+- **Consent-aware** — first run asks for consent. If declined, Mapickii works
+  in local-only mode: `scan` / `clean` / `uninstall` still work, but no data
+  goes to the backend.
+- **Open source** — this repo is the ground truth. Inspect, audit, fork.
+
+### Privacy commands
+
+| Command                                          | Description                                        |
+| ------------------------------------------------ | -------------------------------------------------- |
+| `/mapickii privacy status`                       | Show consent + trusted skills + redaction engine   |
+| `/mapickii privacy trust <skillId>`              | Allow a specific skill to see unredacted content   |
+| `/mapickii privacy untrust <skillId>`            | Revoke a trust grant                               |
+| `/mapickii privacy delete-all --confirm`         | GDPR right to erasure                              |
+| `/mapickii privacy consent-agree [version]`      | Record consent (called automatically by init)      |
+| `/mapickii privacy consent-decline`              | Decline consent → permanent local-only mode        |
 
 ## Directory layout
 

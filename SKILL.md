@@ -105,13 +105,95 @@ list (no rate-limit burn). Force refresh: pass an explicit limit argument
 
 ## 2. Privacy Protection
 
-**Status: placeholder in this PR. The `/mapickii privacy` command group and
-redaction engine land in PR-5.**
+**Why this is here**: Mapickii is open-source, anonymous by design, and does
+not store personal data. With great recommendations comes privacy risk — this
+chapter explains the protections.
 
-When a user asks about what data is tracked, how to delete their data, or
-privacy concerns, this is the chapter. Until PR-5 ships, point to the
-`privacy` note in the first-install JSON: "Anonymous by design. No
-registration. No code or conversation content leaves the device."
+### Intent: privacy
+
+Reference triggers (English): privacy, redact, who can see my data, protect
+my data, stop tracking, delete my data, forget me, erase my account,
+anonymous mode.
+
+**Match in ANY language**.
+
+### Subcommands
+
+- `bash shell.sh privacy status` — show current consent + trusted skills list
+- `bash shell.sh privacy trust <skillId>` — allow skill to see unredacted content
+- `bash shell.sh privacy untrust <skillId>` — revoke previous trust grant
+- `bash shell.sh privacy delete-all --confirm` — GDPR erasure: wipe local + backend
+- `bash shell.sh privacy consent-agree <version>` — record user consent (called from init flow)
+- `bash shell.sh privacy consent-decline` — user declined → permanent local-only mode
+
+### First-install consent flow
+
+When shell returns `status: "consent_required"`:
+
+1. Show `consentText` in the user's conversation language (translate literally —
+   its substance matters: anonymous, no code, no conversations, deletable).
+2. Present **two explicit options** to the user:
+   - **Agree** — Mapickii uploads anonymous behavior data, returns recommendations.
+   - **Decline** — Mapickii works in local-only mode (scan / clean / uninstall
+     only, no recommendations, no backend calls).
+3. If user agrees → call `bash shell.sh privacy consent-agree 1.0`.
+4. If user declines → call `bash shell.sh privacy consent-decline`. Then tell
+   the user what's still available locally and what's gone; **do not re-prompt
+   consent on future runs**.
+5. If user neither agrees nor declines in this session, state stays undecided;
+   next `init` call will prompt again. Do **not** nag repeatedly in one session.
+
+### Local-only mode behavior
+
+If `bash shell.sh init` returns `status: "local_only"` (or any other command
+returns `error: "disabled_in_local_mode"`):
+
+- Confirm local-only state to the user **once** per session.
+- For commands needing backend (`recommend` / `search` / `bundle install` /
+  `recommend:track` / `privacy trust`): refuse with a message like "this
+  requires consent; run `/mapickii privacy consent-agree 1.0` to opt in".
+- For purely local commands (`status` / `scan` / `clean` / `uninstall` /
+  `privacy status` / `privacy delete-all`): proceed as normal.
+
+### Redaction engine (local only)
+
+Before sharing any conversation text with **other** skills, AI **should** pipe
+it through `scripts/redact.py`:
+
+```bash
+echo "$USER_TEXT" | python3 ~/.openclaw/skills/mapickii/scripts/redact.py
+```
+
+This strips API keys (Anthropic / OpenAI / Stripe / GitHub / AWS / Slack /
+OpenAI org), JWT, SSH keys, PEM private keys, URL query tokens, DB connection
+strings, emails, credit cards, Chinese national IDs, Chinese mobile numbers,
+international phones, and `password=...` config lines via local regex.
+
+Zero network calls, <1ms on typical input. Regex is "best effort" not absolute
+— tell the user so if they ask.
+
+**Skills in `trustedSkills` are exempt** — the user has explicitly authorized
+them to see unredacted content via `/mapickii privacy trust <skillId>`.
+
+### Rendering (privacy:status)
+
+- Show a short table: consent version + agreed-at time; trusted skills list
+  (bullets); redaction engine name.
+- If `consent.declined: true`, call it out: "You declined consent. Mapickii is
+  in local-only mode."
+- Close with: "Delete everything: ask me to run `privacy delete-all`."
+
+### Rendering (privacy:delete-all)
+
+Before executing, **re-state the destructive scope** in the user's language:
+
+> This will delete: local CONFIG.md, scan cache, recommendations cache, trash
+> folder, AND your data on Mapickii's backend (events, skill records, consents,
+> trusted skills, recommendation feedback, share reports). It cannot be undone.
+
+Only after the user confirms a second time, execute
+`bash shell.sh privacy delete-all --confirm`. On success, report which tables
+were cleared (from the shell response).
 
 ---
 

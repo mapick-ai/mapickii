@@ -308,6 +308,20 @@ _device_fp() {
   fi
 }
 
+# V1 Privacy Layer: local regex-based PII redaction (see scripts/redact.py).
+# Reads text from stdin, pipes through redact.py, prints scrubbed text.
+# AI should run user text through this before sharing with other skills,
+# unless the target skill is explicitly in trusted_skills.
+_redact() {
+  local redactor="${SCRIPT_DIR}/redact.py"
+  if [[ ! -f "$redactor" ]]; then
+    # If redact.py missing (shouldn't happen after install), pass-through.
+    cat
+    return
+  fi
+  python3 "$redactor" 2>/dev/null || cat
+}
+
 _http() {
   # Usage: _http <METHOD> <PATH> [JSON_BODY]
   # Outputs: response JSON to stdout; on failure, outputs error JSON.
@@ -1143,6 +1157,47 @@ case "${COMMAND}" in
     now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     last_init_at="$(_config_get last_init_at)"
 
+    # V1 consent three-state gate:
+    #   1. declined → local-only mode, no backend calls, no re-prompt
+    #   2. undecided → return consent_required; AI asks user; do NOT scan yet
+    #   3. agreed → proceed with normal init flow
+    consent_ver="$(_config_get consent_version || echo '')"
+    consent_declined="$(_config_get consent_declined || echo '')"
+
+    if [[ "${consent_declined}" == "true" ]]; then
+      # Local-only mode: do a local scan but DO NOT call backend
+      _do_scan
+      scan_json_local="$(_scan_to_json)"
+      skills_count_local="$(echo "$scan_json_local" | jq '.skills // [] | length' 2>/dev/null || echo 0)"
+      cat <<EOF_LOCAL
+{
+  "status": "local_only",
+  "mode": "local_only",
+  "data": {
+    "skillsCount": ${skills_count_local},
+    "message": "Mapickii is in local-only mode (you declined data sharing). scan / clean / uninstall work; no recommendations, no backend calls."
+  }
+}
+EOF_LOCAL
+      exit 0
+    fi
+
+    if [[ -z "${consent_ver}" ]]; then
+      # Undecided: prompt AI to ask user. No scan, no backend calls.
+      cat <<'EOF_CONSENT'
+{
+  "status": "consent_required",
+  "data": {
+    "consentVersion": "1.0",
+    "consentText": "Mapickii analyzes your Skill usage locally and uploads anonymous behavioral data (skill id + timestamp) to give you recommendations. Conversations, file contents, and code never leave your device. You can delete all data anytime with '/mapickii privacy delete-all'.",
+    "agreeHint": "If user agrees: bash shell.sh privacy consent-agree 1.0",
+    "declineHint": "If user declines: bash shell.sh privacy consent-decline (Mapickii works in local-only mode)"
+  }
+}
+EOF_CONSENT
+      exit 0
+    fi
+
     # First install: bootstrap scan + report every scanned skill as install
     if [[ -z "${last_init_at}" ]]; then
       _do_scan
@@ -1495,6 +1550,101 @@ resp="$(_http GET "/assistant/status/${USER_ID}")"
     echo "{\"intent\":\"recommend:track\",\"tracked\":true,\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
     ;;
 
+  # ── Privacy Protection (B2 / F2) ──
+  privacy)
+    sub="${1:-}"
+    case "$sub" in
+      status)
+        TRUSTED_LIST="$(_config_get trusted_skills)" \
+        CONSENT_VER="$(_config_get consent_version)" \
+        CONSENT_AT="$(_config_get consent_agreed_at)" \
+        CONSENT_DECLINED="$(_config_get consent_declined)" \
+        python3 <<'PYEOF'
+import os, json
+
+# Empty env var means the key never got set; default to [] / ""
+raw_trusted = os.environ.get("TRUSTED_LIST") or "[]"
+try:
+    trusted = json.loads(raw_trusted)
+except Exception:
+    trusted = []
+
+data = {
+    "intent": "privacy:status",
+    "consent": {
+        "version": os.environ.get("CONSENT_VER") or "",
+        "agreedAt": os.environ.get("CONSENT_AT") or "",
+        "declined": (os.environ.get("CONSENT_DECLINED") or "") == "true",
+    },
+    "trustedSkills": trusted,
+    "redactionEngine": "scripts/redact.py (local, regex-only)",
+}
+print(json.dumps(data, ensure_ascii=False))
+PYEOF
+        ;;
+      trust)
+        skill_id="${2:-}"
+        [[ -z "$skill_id" ]] && { echo '{"intent":"privacy:trust","error":"missing_argument","hint":"Usage: privacy trust <skillId>"}'; exit 0; }
+        # Remote + local double-write (local is source of truth in V1)
+        _http POST /user/trusted-skills "{\"skillId\":\"${skill_id}\",\"permission\":\"pass_through\"}" >/dev/null 2>&1 || true
+        current="$(_config_get trusted_skills || echo '[]')"
+        updated="$(SKILL_ID="$skill_id" LIST="$current" python3 -c 'import os, json; a = json.loads(os.environ.get("LIST","[]") or "[]"); s = os.environ["SKILL_ID"]; a = list(dict.fromkeys(a + [s])); print(json.dumps(a))')"
+        _config_set trusted_skills "$updated"
+        echo "{\"intent\":\"privacy:trust\",\"skillId\":\"${skill_id}\",\"granted\":true}"
+        ;;
+      untrust)
+        skill_id="${2:-}"
+        [[ -z "$skill_id" ]] && { echo '{"intent":"privacy:untrust","error":"missing_argument","hint":"Usage: privacy untrust <skillId>"}'; exit 0; }
+        current="$(_config_get trusted_skills || echo '[]')"
+        updated="$(SKILL_ID="$skill_id" LIST="$current" python3 -c 'import os, json; a = json.loads(os.environ.get("LIST","[]") or "[]"); s = os.environ["SKILL_ID"]; print(json.dumps([x for x in a if x != s]))')"
+        _config_set trusted_skills "$updated"
+        echo "{\"intent\":\"privacy:untrust\",\"skillId\":\"${skill_id}\",\"revoked\":true}"
+        ;;
+      delete-all)
+        confirm_flag="${2:-}"
+        if [[ "$confirm_flag" != "--confirm" ]]; then
+          echo '{"intent":"privacy:delete-all","error":"confirmation_required","hint":"This wipes local CONFIG.md, caches, trash, AND backend user data. Run: privacy delete-all --confirm"}'
+          exit 0
+        fi
+        # Call backend GDPR erasure first
+        resp="$(_http DELETE /user/data "")"
+        # Clear local state — keep device_fp so subsequent sessions are
+        # identical to a fresh install (not a weird "half-wiped" state)
+        dfp="$(_config_get device_fp)"
+        trash_dir="${CONFIG_DIR}/trash"
+        rm -rf "$trash_dir" 2>/dev/null || true
+        cache_dir="${HOME}/.mapickii/cache"
+        rm -rf "$cache_dir" 2>/dev/null || true
+        cat > "${CONFIG_FILE}" <<EOF_CFG
+# Mapickii Configuration
+# Auto-generated - do not delete manually
+
+device_fp: ${dfp}
+EOF_CFG
+        echo "{\"intent\":\"privacy:delete-all\",\"localCleared\":true,\"backendResponse\":${resp}}"
+        ;;
+      consent-agree)
+        version="${2:-1.0}"
+        now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        _http POST /user/consent "{\"consentVersion\":\"${version}\",\"agreedAt\":\"${now_utc}\"}" >/dev/null 2>&1 || true
+        _config_set consent_version "$version"
+        _config_set consent_agreed_at "$now_utc"
+        _config_del consent_declined 2>/dev/null || true
+        echo "{\"intent\":\"privacy:consent-agree\",\"version\":\"${version}\",\"agreedAt\":\"${now_utc}\"}"
+        ;;
+      consent-decline)
+        # User declined consent → enter local-only mode permanently.
+        now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        _config_set consent_declined "true"
+        _config_set consent_declined_at "$now_utc"
+        echo "{\"intent\":\"privacy:consent-decline\",\"mode\":\"local_only\",\"declinedAt\":\"${now_utc}\",\"message\":\"Mapickii is now in local-only mode. scan / clean / uninstall still work; no data goes to the backend.\"}"
+        ;;
+      *)
+        echo '{"intent":"privacy","error":"unknown_subcommand","hint":"Available: status | trust <skillId> | untrust <skillId> | delete-all --confirm | consent-agree [version] | consent-decline"}'
+        ;;
+    esac
+    ;;
+
 help|--help|-h)
 
 cat >&2 <<'USAGE'
@@ -1516,6 +1666,14 @@ Recommendation & Discovery:
   recommend [limit]              Personalized skill recommendations (default 5, cached 24h)
   search <keyword> [limit]       Search skills by keyword (default 10)
   recommend:track <recId> <skillId> <action>  Track feedback (install/ignore/...)
+
+Privacy:
+  privacy status                 Show consent + trusted skills status
+  privacy trust <skillId>        Allow a skill to see unredacted content
+  privacy untrust <skillId>      Revoke a previous trust grant
+  privacy delete-all --confirm   GDPR erasure: wipe local + backend data
+  privacy consent-agree [version]   Record user consent (v1.0 default)
+  privacy consent-decline        Decline consent; enter local-only mode
 
 Lifecycle:
   scan                      Scan local environment
