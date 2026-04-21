@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/version-3.0-blue?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/modules-M1%20%7C%20M2%20%7C%20M3-orange?style=flat-square" alt="Modules" />
-  <img src="https://img.shields.io/badge/platforms-6-purple?style=flat-square" alt="Platforms" />
+  <img src="https://img.shields.io/badge/platform-OpenClaw-purple?style=flat-square" alt="Platform" />
 </p>
 
 <p align="center">
@@ -38,16 +38,15 @@ Mapickii is the intelligent butler of the Mapick ecosystem. It bundles three mod
 - **Referral codes** — Auto-generated 6-digit codes, one-time binding
 - **Push cadence** — Daily / weekly / muted, switchable via natural language
 
-## Supported Platforms
+## Supported Platform
 
-| Platform    | Vendor    | Install directory              |
-| ----------- | --------- | ------------------------------ |
-| Claude Code | Anthropic | `~/.claude/skills/mapickii/`   |
-| Codex CLI   | OpenAI    | `~/.codex/skills/mapickii/`    |
-| Gemini CLI  | Google    | `~/.gemini/skills/mapickii/`   |
-| OpenCode    | OpenCode  | `~/.opencode/skills/mapickii/` |
-| QwenCode    | Alibaba   | `~/.qwencode/skills/mapickii/` |
-| OpenClaw    | OpenClaw  | `~/.openclaw/skills/mapickii/` |
+| Platform | Vendor   | Install directory              |
+| -------- | -------- | ------------------------------ |
+| OpenClaw | OpenClaw | `~/.openclaw/skills/mapickii/` |
+
+Mapickii V1 targets OpenClaw — the open Skill marketplace. Other AI coding
+CLIs run their own closed Skill directories and are out of scope for this
+release.
 
 ## <a name="install"></a>Install
 
@@ -63,25 +62,10 @@ Or with `wget`:
 wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh | bash
 ```
 
-Project-local install:
-
-```bash
-MAPICKII_LOCAL=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh)"
-```
-
 Pin a specific version:
 
 ```bash
 MAPICKII_VERSION=v1.0.0 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
-```
-
-### Local install (developers)
-
-```bash
-# from the mapick repo root
-bash .shell/mapickii.sh            # installs to ~/.claude/skills/mapickii/
-bash .shell/mapickii.sh openclaw   # installs to ~/.openclaw/skills/mapickii/
-bash .shell/mapickii.sh project    # installs to <project>/.claude/skills/mapickii/
 ```
 
 ### Manual install
@@ -90,6 +74,9 @@ bash .shell/mapickii.sh project    # installs to <project>/.claude/skills/mapick
 git clone https://github.com/mapick-ai/mapickii.git
 bash mapickii/install.sh
 ```
+
+Both paths install to `~/.openclaw/skills/mapickii/` and require OpenClaw
+(`claw` or `openclaw` CLI) to be on your `$PATH`.
 
 ## <a name="commands"></a>Commands
 
