@@ -73,19 +73,99 @@ RULES = [
 ]
 
 
-def redact(text: str) -> str:
-    """Apply all rules in declared order. Idempotent: running twice = same output."""
+# ── V1 PR-13 TC-8A.3: code-block whitelist + meta-topic heuristics ──
+#
+# Whitelist layers (priority, short-circuit):
+#   1. Global disable (handled by shell.sh `_redact` via CONFIG `redact_disabled`)
+#   2. Text structure: ``` ... ``` blocks and `inline` code passed through
+#   3. Meta-topic context: regex / format / validation / "how to detect X" →
+#      skip corresponding rule family so discussion isn't mangled
+#
+# All three run in Python (this file). Disabled flag is checked by shell
+# before invoking redact.py, so Python code never sees a true value for it.
+
+CODE_BLOCK_RE = re.compile(r"```[\s\S]*?```|`[^`\n]+`", re.MULTILINE)
+
+# If any of these context signals are present in a text chunk, skip the
+# named rule family. Regex literal (?i) is case-insensitive.
+META_TOPIC_PATTERNS = {
+    "email": re.compile(r"(?i)\b(regex|regexp|正则|正则表达式|format|格式|validation|验证|检测|pattern)\b"),
+    "api_key": re.compile(r"(?i)(how\s+to|如何).*\b(key|密钥|token|format|格式)\b"),
+    "credit_card": re.compile(r"(?i)(card\s*format|卡号格式|validation|luhn|mod.10|check\s*digit)"),
+    "phone": re.compile(r"(?i)(phone\s*format|手机号格式|国际区号|e\.164)"),
+}
+
+# Which rule replacement strings belong to which meta-topic family.
+# If the topic signal is present, these replacements' corresponding rules
+# are skipped.
+META_TOPIC_TO_REPLACEMENTS = {
+    "email": {"[EMAIL]"},
+    "api_key": {"[API_KEY_ANTHROPIC]", "[API_KEY_STRIPE]", "[API_KEY_GLM]", "[API_KEY_OPENAI]", "[TOKEN_GITHUB]"},
+    "credit_card": {"[CARD]"},
+    "phone": {"[PHONE]", "[CN_PHONE]"},
+}
+
+
+def _apply_rules(chunk: str, skip_families: set) -> str:
+    """Apply rules to a single non-code chunk, honoring the skip set."""
+    # Collect all replacement strings to skip (from META_TOPIC_TO_REPLACEMENTS)
+    skip_replacements = set()
+    for family in skip_families:
+        skip_replacements.update(META_TOPIC_TO_REPLACEMENTS.get(family, set()))
+
     for pattern, replacement in RULES:
-        text = pattern.sub(replacement, text)
-    return text
+        # replacement might be a group backref like r"\1=[REDACTED]" —
+        # check if any skip label occurs in the literal replacement string
+        if any(sk in replacement for sk in skip_replacements):
+            continue
+        chunk = pattern.sub(replacement, chunk)
+    return chunk
+
+
+def _detect_meta_topics(text: str) -> set:
+    """Return the set of meta-topic families signaled in text."""
+    found = set()
+    for family, pattern in META_TOPIC_PATTERNS.items():
+        if pattern.search(text):
+            found.add(family)
+    return found
+
+
+def redact(text: str, code_block_aware: bool = True) -> str:
+    """Apply redaction rules. Idempotent: running twice = same output.
+
+    V1 PR-13: when code_block_aware=True (default), ``` fences and `inline`
+    code are passed through untouched, and meta-topic context signals skip
+    the corresponding rule family.
+    """
+    if not code_block_aware:
+        return _apply_rules(text, set())
+
+    # Detect meta-topics from the whole text first
+    skip_families = _detect_meta_topics(text)
+
+    # Split on code fences and inline code; apply rules only to non-code chunks
+    parts = []
+    last_end = 0
+    for m in CODE_BLOCK_RE.finditer(text):
+        if m.start() > last_end:
+            parts.append(_apply_rules(text[last_end:m.start()], skip_families))
+        parts.append(m.group(0))  # code block / inline code passed through as-is
+        last_end = m.end()
+    if last_end < len(text):
+        parts.append(_apply_rules(text[last_end:], skip_families))
+    return "".join(parts)
 
 
 def main() -> int:
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
         text = " ".join(sys.argv[1:])
     else:
         text = sys.stdin.read()
-    sys.stdout.write(redact(text))
+
+    # Flag to disable code-aware mode (for debugging / strict redaction)
+    code_aware = "--no-code-aware" not in sys.argv
+    sys.stdout.write(redact(text, code_block_aware=code_aware))
     return 0
 
 
