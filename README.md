@@ -93,48 +93,39 @@ After install, use `/mapickii <command>` inside your AI tool:
 | `/mapickii daily`      | Daily report (yesterday's output + today's picks)                 |
 | `/mapickii weekly`     | Weekly report (summary + trends)                                  |
 | `/mapickii scan`       | Rescan local Skills                                               |
-| `/mapickii chat <msg>` | Natural-language fallback                                         |
 
-### M3 · Bundles
+### Recommendation & Discovery
+
+| Command                           | Description                                               |
+| --------------------------------- | --------------------------------------------------------- |
+| `/mapickii recommend [limit]`     | Personalized skill recommendations (default 5, cached 24h) |
+| `/mapickii search <keyword>`      | Search skills by keyword                                  |
+
+### Bundles (M3)
 
 | Command                         | Description                                      |
 | ------------------------------- | ------------------------------------------------ |
 | `/mapickii bundle`              | List all bundles                                 |
 | `/mapickii bundle <id>`         | Bundle detail (installed / missing + match rate) |
 | `/mapickii bundle recommend`    | Suggest bundles based on installed Skills        |
-| `/mapickii bundle install <id>` | One-click install of missing Skills              |
-
-### Identity & referrals
-
-| Command                   | Description                                |
-| ------------------------- | ------------------------------------------ |
-| `/mapickii register`      | Register a new Mapick identity             |
-| `/mapickii id`            | Show the current identity                  |
-| `/mapickii login <MP-ID>` | Bind an existing Mapick ID                 |
-| `/mapickii ref`           | Show your referral code and referral count |
-| `/mapickii ref <code>`    | Bind a referral code (one-time, immutable) |
+| `/mapickii bundle install <id>` | Fetch install commands (AI executes, then reports success) |
 
 ### Uninstall
 
-| Command                                                               | Description                                       |
-| --------------------------------------------------------------------- | ------------------------------------------------- |
-| `/mapickii uninstall <skillId>`                                       | Dry-run — returns the paths that would be removed |
-| `/mapickii uninstall <skillId> --confirm`                             | Confirm removal (backup + `rm -rf`)               |
-| `/mapickii uninstall <skillId> --scope user\|project\|both --confirm` | Remove by scope                                   |
+| Command                                   | Description                                          |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `/mapickii uninstall <skillId>`           | Dry-run — returns the paths that would be removed    |
+| `/mapickii uninstall <skillId> --confirm` | Confirm removal (backup + `rm -rf`, user + project)  |
+
+Advanced: `--scope user` or `--scope project` to restrict removal. Default is
+`both`.
 
 Protected Skills — `mapickii` / `mapick` / `tasa` — cannot be removed.
 
-### Push cadence
-
-| Command                 | Description |
-| ----------------------- | ----------- |
-| `/mapickii push daily`  | Daily push  |
-| `/mapickii push weekly` | Weekly push |
-| `/mapickii push off`    | Mute        |
-
 ## Natural-language triggers
 
-You don't need the `/mapickii` prefix — these phrases are recognized directly:
+You don't need the `/mapickii` prefix — ask naturally. Reference English
+trigger examples below; **Mapickii recognizes equivalents in any language**:
 
 - **"status", "how is it going", "my skill library"** → `status`
 - **"clean up", "zombies", "unused"** → `clean`
@@ -142,9 +133,6 @@ You don't need the `/mapickii` prefix — these phrases are recognized directly:
 - **"daily", "how's today"** → `daily`
 - **"weekly", "this week"** → `weekly`
 - **"bundle", "bundle recommendation"** → `bundle:recommend`
-- **"stop pushing", "mute", "do not disturb"** → `push:off`
-- **"switch to weekly", "push less"** → `push:weekly`
-- **"turn on push", "resume push"** → `push:daily`
 
 ## Lifecycle model
 
