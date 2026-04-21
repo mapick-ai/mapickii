@@ -1,6 +1,7 @@
 ---
 name: mapickii
 description: Mapickii — Skill recommendation & privacy protection for OpenClaw. Scans your local skills, suggests what you're missing, and keeps other skills from seeing your secrets.
+metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["python3", "jq", "curl"] }, "primaryEnv": "MAPICKII_API_BASE" } }
 ---
 
 # Mapickii
@@ -197,9 +198,93 @@ were cleared (from the shell response).
 
 ---
 
-## 3. Persona Report (V1.5)
+## 3. Persona Report
 
-Not in V1 scope. Leave a one-line mention only.
+### Intent: report
+
+> Match in ANY language. Reference triggers (English): analyze me, my persona,
+> my mapick report, who am I as a developer, developer type, roast me.
+>
+> Examples: "分析我" · "我的人格" · "analysiere mich" · "meine persönlichkeit" ·
+> "私を分析して" · "분석해줘" · "analyze my developer type" · "generate my report"
+
+Command: `/mapickii report`  (alias: `/mapickii persona`)
+
+### Flow
+
+1. Call `report` — returns primaryPersona + shadowPersona + dataProfile (English).
+2. If `primaryPersona.id === "fresh_meat"` → tell the user to use Mapick for at least
+   7 days before coming back. Do NOT generate HTML.
+3. Otherwise, render a localized persona report to the user using `dataProfile`.
+   Keep it short and witty — one screen. Use the user's `locale`.
+4. Generate a **self-contained HTML share page** per the Production Prompt
+   in [`prompts/persona-production.md`](prompts/persona-production.md).
+   Save HTML to a temp file (e.g. `/tmp/mapickii-report-{reportId}.html`).
+5. Call `share <reportId> <tmpFile> <locale>` to upload. Show the returned
+   `shareUrl` to the user with a call-to-action (e.g., "Share on Twitter").
+
+### Rate limits
+
+- `report`: backend enforces 10/day per deviceFp → returns 429 if exceeded
+- `share`:  backend enforces 10/day per deviceFp → returns 429 if exceeded
+- HTML > 200KB → backend returns 413; ask AI to regenerate a shorter version.
+
+### Intent: share
+
+Re-upload an already-generated HTML (rare — user wants a fresh shareId or the
+previous one expired). Skill command is `share <reportId> <htmlFile> [locale]`.
+AI should not invoke this directly; only surface it if the user explicitly asks
+"give me the link again" and the previous file is still available.
+
+---
+
+## 3.5. Security Score
+
+### Intent: security
+
+> Match in ANY language. Reference triggers (English): is X safe, security score
+> of X, safety of X, can I trust X, scan X, X trustworthy, audit X.
+>
+> Examples: "X 安全吗" · "X 的安全评分" · "ist X sicher" · "Xは安全ですか" ·
+> "can I install X" · "audit the github-ops skill"
+
+Command: `/mapickii security <skillId>`
+
+### Flow
+
+1. Call `security <skillId>` — returns `safetyGrade` (A/B/C) + `signals` +
+   `alternatives[]` + `detailsEn`.
+2. Localize `detailsEn` into the user's locale.
+3. **Display rule (STRICT)**:
+   - Grade **A**: show a short "✓ Safe" summary + key signals (networkRequests,
+     fileAccess).
+   - Grade **B**: show "⚠ Caveats" + explain what signals are elevated.
+     User can still install, but surface the tradeoff.
+   - Grade **C**: **DO NOT show the skill's name as an installable option.**
+     Instead, show a red warning + the `alternatives[]` list (same category,
+     grade A). User must explicitly acknowledge to proceed.
+4. If `lastScannedAt` is null, tell the user "not yet scanned — proceed with caution."
+
+### Intent: security:report
+
+> Match in ANY language. Reference triggers: report X as malicious, flag X,
+> X is suspicious, X stole my data, I want to report X.
+
+Command: `/mapickii security:report <skillId> <reason> <evidenceEn>`
+
+AI should:
+1. Ask the user to pick a reason from this enum (translated):
+   `suspicious_network` · `data_exfiltration` · `malicious_code` ·
+   `misleading_function` · `other`
+2. Ask for an evidence description (≥10 chars). Translate to English if needed.
+3. Call `security:report <skillId> <reason> <englishEvidence>`.
+4. Report back the returned `reportId` — tell the user Mapick security team
+   reviews within 48 hours.
+
+### Rate limits
+
+- `security`: 60/hour per deviceFp
+- `security:report`: 5/day per deviceFp, 1/day per (fp, skillId)
 
 ---
 
@@ -322,11 +407,11 @@ with short reason). Render in the user's language.
 
 ---
 
-## 6. Security Score (V1 placeholder)
+## 6. Security Score
 
-The `/mapickii security <skillId>` command lands in a later PR. Until then,
-don't invent safety grades — only show them if they appear in a backend
-response.
+> V1 PR-12 delivered. See **§3.5 Security Score** above for full spec (Intent,
+> flow, display rules, rate limits). This section kept as a cross-reference
+> for readers skimming the table of contents.
 
 ---
 

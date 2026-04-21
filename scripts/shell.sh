@@ -1550,6 +1550,112 @@ resp="$(_http GET "/assistant/status/${USER_ID}")"
     echo "{\"intent\":\"recommend:track\",\"tracked\":true,\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
     ;;
 
+  # ── Persona Report + Share (V1 PR-12) ──
+  report|persona)
+    # V1 PR-12: GET /report/persona — fetch user's matched persona + dataProfile (English)
+    # Backend returns 10-persona ID + matchedTraits + dataProfile. AI renders locally
+    # using user's LLM per v2.0 §9 (no server-side LLM calls).
+    # Rate limit: 10/day per deviceFp (backend enforced).
+    resp="$(_http GET "/report/persona")"
+
+    if echo "$resp" | grep -q '"error"'; then
+      echo "$resp"
+      exit 0
+    fi
+
+    # Guard fresh_meat bucket: if user has <7 days of data, backend returns
+    # primaryPersona.id='fresh_meat'. AI shows "use longer then come back".
+    primary_id="$(echo "$resp" | jq -r '.primaryPersona.id // empty' 2>/dev/null || echo '')"
+    if [[ "$primary_id" == "fresh_meat" ]]; then
+      echo "$resp" | jq -c '. + {intent:"report", status:"not_ready", messageEn:"Use Mapick for a week, then come back for your persona report."}'
+      exit 0
+    fi
+
+    echo "$resp" | jq -c '. + {intent:"report"}'
+    ;;
+
+  share)
+    # V1 PR-12: POST /share/upload — Skill-side uploads LLM-generated HTML, gets short URL.
+    # Args: <reportId> <html-file-path> [locale]
+    # AI responsibility: generate HTML using Production Prompt, save to a local file,
+    #   pass the file path here.
+    # Rate limit: 10/day per deviceFp.
+    report_id="${1:-}"
+    html_path="${2:-}"
+    locale_arg="${3:-en}"
+    if [[ -z "$report_id" || -z "$html_path" ]]; then
+      echo '{"intent":"share","error":"missing_argument","hint":"Usage: share <reportId> <htmlFilePath> [locale]"}'
+      exit 0
+    fi
+    if [[ ! -f "$html_path" ]]; then
+      echo "{\"intent\":\"share\",\"error\":\"html_not_found\",\"path\":\"${html_path}\"}"
+      exit 0
+    fi
+
+    # Check size locally before upload (backend rejects > 200KB with 413)
+    html_size="$(wc -c < "$html_path" | tr -d ' ')"
+    if [[ "$html_size" -gt 204800 ]]; then
+      echo "{\"intent\":\"share\",\"error\":\"payload_too_large\",\"hint\":\"HTML exceeds 200KB limit (got ${html_size} bytes). Ask AI to regenerate shorter.\"}"
+      exit 0
+    fi
+
+    body="$(HTML_PATH="$html_path" REPORT_ID="$report_id" LOCALE="$locale_arg" python3 -c '
+import os, json, sys
+with open(os.environ["HTML_PATH"], encoding="utf-8") as f:
+    html = f.read()
+print(json.dumps({
+    "reportId": os.environ["REPORT_ID"],
+    "locale": os.environ["LOCALE"],
+    "html": html,
+}))
+')"
+    resp="$(_http POST /share/upload "$body")"
+    echo "$resp" | jq -c '. + {intent:"share"}'
+    ;;
+
+  security)
+    # V1 PR-12: GET /skill/:id/security — fetch A/B/C grade + signals + alternatives.
+    # AI displays result per SKILL.md rule:
+    #   - A/B: show grade + signals summary
+    #   - C:   DO NOT show the skill itself to user; show alternatives[] with a warning.
+    # Sub-commands:
+    #   security <skillId>           — query
+    #   security:report <skillId>    — submit abuse report (handled by the case below)
+    skill_id="${1:-}"
+    if [[ -z "$skill_id" ]]; then
+      echo '{"intent":"security","error":"missing_argument","hint":"Usage: security <skillId>"}'
+      exit 0
+    fi
+    resp="$(_http GET "/skill/${skill_id}/security")"
+    echo "$resp" | jq -c '. + {intent:"security"}'
+    ;;
+
+  security:report|security-report)
+    # V1 PR-12: POST /skill/:id/report — user abuse report submission.
+    # Args: <skillId> <reason> <evidenceEn>
+    # reason must be one of: suspicious_network / data_exfiltration / malicious_code /
+    #                       misleading_function / other
+    # evidenceEn: min 10 chars, max 2000.
+    # Rate limit: 5/day per deviceFp; 1/day per (fp, skillId).
+    skill_id="${1:-}"
+    reason="${2:-}"
+    evidence="${3:-}"
+    if [[ -z "$skill_id" || -z "$reason" || -z "$evidence" ]]; then
+      echo '{"intent":"security:report","error":"missing_argument","hint":"Usage: security:report <skillId> <reason> <evidenceEn>"}'
+      exit 0
+    fi
+    body="$(REASON="$reason" EVIDENCE="$evidence" python3 -c '
+import os, json
+print(json.dumps({
+    "reason": os.environ["REASON"],
+    "evidenceEn": os.environ["EVIDENCE"],
+    "contactMethod": "none",
+}))
+')"
+    resp="$(_http POST "/skill/${skill_id}/report" "$body")"
+    echo "$resp" | jq -c '. + {intent:"security:report", skillId:"'"$skill_id"'"}'
+    ;;
+
   # ── Privacy Protection (B2 / F2) ──
   privacy)
     sub="${1:-}"
