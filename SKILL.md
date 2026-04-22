@@ -19,6 +19,62 @@ conversation language.
 **Why this is first**: Mapickii's core value is helping users find skills they
 don't have but should. Everything else is secondary.
 
+```dot
+digraph intent_router {
+    rankdir=TB;
+    node [shape=diamond, style=filled, fillcolor="#f0f0f0"];
+    edge [fontsize=10];
+    
+    "User input" [shape=ellipse, fillcolor="#e0e0e0"];
+    
+    "recommend?" [label="recommend/\nsuggest/\n发现技能"];
+    "search?" [label="search/\nfind/\n搜索"];
+    "privacy?" [label="privacy/\n数据保护"];
+    "persona?" [label="persona/\nreport/\n分析我"];
+    "security?" [label="security/\n安全/\ntrust"];
+    "status?" [label="status/\n概览"];
+    "clean?" [label="clean/\n清理"];
+    "workflow?" [label="workflow/\n工作流"];
+    "bundle?" [label="bundle/\n套装"];
+    
+    "shell recommend" [shape=box, style=rounded];
+    "shell search" [shape=box, style=rounded];
+    "shell privacy" [shape=box, style=rounded];
+    "shell report" [shape=box, style=rounded];
+    "shell security" [shape=box, style=rounded];
+    "shell status" [shape=box, style=rounded];
+    "shell clean" [shape=box, style=rounded];
+    "shell workflow" [shape=box, style=rounded];
+    "shell bundle" [shape=box, style=rounded];
+    
+    "User input" -> "recommend?";
+    "User input" -> "search?";
+    "User input" -> "privacy?";
+    "User input" -> "persona?";
+    "User input" -> "security?";
+    "User input" -> "status?";
+    "User input" -> "clean?";
+    "User input" -> "workflow?";
+    "User input" -> "bundle?";
+    
+    "recommend?" -> "shell recommend" [label="yes"];
+    "search?" -> "shell search" [label="yes"];
+    "privacy?" -> "shell privacy" [label="yes"];
+    "persona?" -> "shell report" [label="yes"];
+    "security?" -> "shell security" [label="yes"];
+    "status?" -> "shell status" [label="yes"];
+    "clean?" -> "shell clean" [label="yes"];
+    "workflow?" -> "shell workflow" [label="yes"];
+    "bundle?" -> "shell bundle" [label="yes"];
+    
+    {rank=same; "recommend?"; "search?"; "privacy?";}
+    {rank=same; "persona?"; "security?"; "status?";}
+    {rank=same; "clean?"; "workflow?"; "bundle?";}
+}
+```
+
+Match triggers in ANY language. English shown as reference only.
+
 ### Intent: recommend
 
 Reference triggers (English): recommend, suggest, find skill, what should I
