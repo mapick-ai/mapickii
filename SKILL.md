@@ -1,6 +1,6 @@
 ---
 name: mapickii
-description: Mapickii — Skill recommendation & privacy protection for OpenClaw. Scans your local skills, suggests what you're missing, and keeps other skills from seeing your secrets.
+description: Use when users ask for skill recommendations, skill search, privacy protection, zombie cleanup, persona reports, or security scores in OpenClaw environment.
 metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["python3", "jq", "curl"] }, "primaryEnv": "MAPICKII_API_BASE" } }
 ---
 
