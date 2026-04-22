@@ -38,15 +38,15 @@ digraph intent_router {
     
     "User input" [shape=ellipse, fillcolor="#e0e0e0"];
     
-    "recommend?" [label="recommend/\nsuggest/\n发现技能"];
-    "search?" [label="search/\nfind/\n搜索"];
-    "privacy?" [label="privacy/\n数据保护"];
-    "persona?" [label="persona/\nreport/\n分析我"];
-    "security?" [label="security/\n安全/\ntrust"];
-    "status?" [label="status/\n概览"];
-    "clean?" [label="clean/\n清理"];
-    "workflow?" [label="workflow/\n工作流"];
-    "bundle?" [label="bundle/\n套装"];
+    "recommend?" [label="recommend/\nsuggest/\ndiscover"];
+    "search?" [label="search/\nfind"];
+    "privacy?" [label="privacy/\ndata"];
+    "persona?" [label="persona/\nreport"];
+    "security?" [label="security/\ntrust"];
+    "status?" [label="status/\noverview"];
+    "clean?" [label="clean/\nzombies"];
+    "workflow?" [label="workflow/\nroutine"];
+    "bundle?" [label="bundle/\npack"];
     
     "shell recommend" [shape=box, style=rounded];
     "shell search" [shape=box, style=rounded];
