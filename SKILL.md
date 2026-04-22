@@ -88,26 +88,17 @@ Match triggers in ANY language. English shown as reference only.
 
 ### Intent: recommend
 
-Reference triggers (English): recommend, suggest, find skill, what should I
-install, best skills, what am I missing, any suggestions, discover, skills for
-me, good skills.
-
-**Match in ANY language** — recognize equivalents in whatever language the user
-speaks. Only treat this as the `recommend` intent when the user asks about
-**skills / tools / what to install** (not general-purpose "recommend a book").
-
 Shell command: `bash shell.sh recommend [limit]`
 Backend: `GET /recommend/feed?limit=5` (DeviceFp guarded, 60/h rate limit)
 
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
+
 ### Intent: search
-
-Reference triggers (English): search, find, look for, is there a skill for,
-find a skill that, anything for X.
-
-**Match in ANY language**.
 
 Shell command: `bash shell.sh search <keyword> [limit]`
 Backend: `GET /skill/live-search?query=&limit=10` (DeviceFp guarded, 30/min)
+
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 ### Rendering (recommend)
 
@@ -179,11 +170,7 @@ chapter explains the protections.
 
 ### Intent: privacy
 
-Reference triggers (English): privacy, redact, who can see my data, protect
-my data, stop tracking, delete my data, forget me, erase my account,
-anonymous mode.
-
-**Match in ANY language**.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 ### Subcommands
 
@@ -269,11 +256,7 @@ were cleared (from the shell response).
 
 ### Intent: report
 
-> Match in ANY language. Reference triggers (English): analyze me, my persona,
-> my mapick report, who am I as a developer, developer type, roast me.
->
-> Examples: "分析我" · "我的人格" · "analysiere mich" · "meine persönlichkeit" ·
-> "私を分析して" · "분석해줘" · "analyze my developer type" · "generate my report"
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 Command: `/mapickii report`  (alias: `/mapickii persona`)
 
@@ -309,11 +292,7 @@ AI should not invoke this directly; only surface it if the user explicitly asks
 
 ### Intent: security
 
-> Match in ANY language. Reference triggers (English): is X safe, security score
-> of X, safety of X, can I trust X, scan X, X trustworthy, audit X.
->
-> Examples: "X 安全吗" · "X 的安全评分" · "ist X sicher" · "Xは安全ですか" ·
-> "can I install X" · "audit the github-ops skill"
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 Command: `/mapickii security <skillId>`
 
@@ -334,8 +313,7 @@ Command: `/mapickii security <skillId>`
 
 ### Intent: security:report
 
-> Match in ANY language. Reference triggers: report X as malicious, flag X,
-> X is suspicious, X stole my data, I want to report X.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 Command: `/mapickii security:report <skillId> <reason> <evidenceEn>`
 
@@ -359,12 +337,7 @@ AI should:
 
 ### Intent: status
 
-Reference triggers (English): status, overview, dashboard, my skills, skill
-stats, how am I doing, skill summary.
-
-**Match in ANY language** — recognize equivalents in whatever language the
-user speaks. The English words above are reference only, not an exhaustive
-allow-list.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 Shell command: `bash shell.sh status`
 Backend: `GET /assistant/status/:userId` (FpOrApiKeyGuard, DeviceFp accepted)
@@ -421,10 +394,7 @@ skills to complete a workflow.
 
 ### Intent: bundle
 
-Reference triggers (English): bundle, bundle recommendation, recommend a
-bundle, workflow pack, skill pack.
-
-**Match in ANY language**.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 | User input                      | Shell command                     | Notes                                  |
 | ------------------------------- | --------------------------------- | -------------------------------------- |
@@ -480,10 +450,7 @@ with short reason). Render in the user's language.
 
 ### Intent: clean
 
-Reference triggers (English): clean, cleanup, zombies, dead skills, unused,
-prune, get rid of unused skills.
-
-**Match in ANY language**.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 Shell command: `bash shell.sh clean`
 Backend: `GET /user/:userId/zombies` via `clean` case
@@ -508,7 +475,7 @@ When user replies:
 
 ### Intent: uninstall
 
-Reference triggers (English): uninstall, remove skill, delete skill, drop it.
+> See `reference/intents.md` for trigger keywords.
 
 Shell command: `bash shell.sh uninstall <skillId> --confirm`
 
@@ -522,18 +489,15 @@ can pass `--scope user` or `--scope project` to limit removal.
 ## 8. Workflow / Daily / Weekly
 
 ### Intent: workflow
-Reference triggers (English): workflow, routine, pipeline, skill chain, common combos.
-**Match in ANY language**.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 Shell command: `bash shell.sh workflow`
 
 ### Intent: daily
-Reference triggers (English): daily, today, yesterday, daily report, what's today.
-**Match in ANY language**.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 Shell command: `bash shell.sh daily`
 
 ### Intent: weekly
-Reference triggers (English): weekly, this week, weekly summary, last week.
-**Match in ANY language**.
+> See `reference/intents.md` for trigger keywords. Match in ANY language.
 Shell command: `bash shell.sh weekly`
 
 ### Rendering for these three
