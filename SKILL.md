@@ -9,6 +9,17 @@ metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["python3", "jq
 V1 principle: **Recommend to users, protect their privacy, let personas spread.**
 Priority: recommendation = privacy > persona sharing > safety score > cleanup > everything else.
 
+---
+
+## When NOT to Use
+
+- User is NOT in OpenClaw environment (other AI platforms have different skill systems)
+- User asks about general recommendations (books, movies, restaurants) — not skill-specific
+- User's conversation has no mention of skills, tools, or AI capabilities
+- Platform lacks `python3`, `jq`, or `curl` (metadata.requires check failed)
+
+If these apply, respond normally without invoking Mapickii commands.
+
 All command output below is **English reference** — AI must render in the user's
 conversation language.
 
