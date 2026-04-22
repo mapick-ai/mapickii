@@ -539,6 +539,22 @@ dividers.
 
 ---
 
+## Red Flags — STOP and Verify
+
+These signals mean you're about to violate a rule:
+
+| Signal | Required Action |
+|--------|-----------------|
+| User wants Grade C skill | **DO NOT show install option.** Show alternatives[] + red warning. User must explicitly acknowledge. |
+| `delete-all` request | Re-state destructive scope. Require second confirmation before executing. |
+| Local-only mode + recommend/search | Refuse with "requires consent; run `/mapickii privacy consent-agree 1.0`" |
+| Empty search results | Show template: broader keyword / category / recommend fallback |
+| `consent_required` status | Run consent flow once per session. Do not nag repeatedly. |
+
+**All of these require explicit user action before proceeding.**
+
+---
+
 ## Lifecycle model (reference)
 
 Install → First use → Active → Declining → Zombie → Uninstall
