@@ -474,12 +474,6 @@ with short reason). Render in the user's language.
 
 ---
 
-## 6. Security Score
-
-> V1 PR-12 delivered. See **§3.5 Security Score** above for full spec (Intent,
-> flow, display rules, rate limits). This section kept as a cross-reference
-> for readers skimming the table of contents.
-
 ---
 
 ## 7. Zombie Cleanup
@@ -566,19 +560,9 @@ These signals mean you're about to violate a rule:
 
 ---
 
-## Lifecycle model (reference)
+## Lifecycle Model
 
-Install → First use → Active → Declining → Zombie → Uninstall
-
-| Stage              | Trigger                          | Behavior                            |
-| ------------------ | -------------------------------- | ----------------------------------- |
-| Install            | Skill directory exists           | Record install time and path        |
-| First use          | First invocation                 | Measure activation delay            |
-| Activation timeout | No call within 7 days of install | Flag `activation_timeout`           |
-| Active             | ≥ 2 calls in 7 days              | Compute frequency, detect sequences |
-| Declining          | This week < 50% of last week     | Internal flag                       |
-| Zombie             | No call in 30 days               | Flag `zombie`, surface in `clean`   |
-| Uninstall          | User-triggered                   | Record reason, back up to `trash/`  |
+See `reference/lifecycle.md` for stage definitions and triggers.
 
 ---
 
@@ -637,39 +621,12 @@ paraphrase the error reason in the user's language, not show the JSON.
 
 ---
 
-## CONFIG.md structure (auto-generated)
+## CONFIG.md
 
-```yaml
-device_fp: <16-hex>            # sha256(hostname|uname-s|uname-m|HOME)[:16]
-created_at: <ISO8601>
-last_init_at: <ISO8601>        # 30-min idempotency tracker
-scan:                          # latest scan result
-  scanned_at: <ISO8601>
-  skills:
-    - id: <skillId>
-      name: <displayName>
-      path: <absolute-path>
-      installed_at: <ISO8601>
-      enabled: <bool>
-      last_modified: <ISO8601>
-  system: { os, arch, hostname, home, editors: {...} }
-recommendations:               # cached backend feed (PR-4)
-  cached_at: <ISO8601>
-  ttl_hours: 24
-  items: [...]
-```
-
-Do not write to CONFIG.md directly — always go through shell commands.
+See `reference/api.md` for structure. Do not write directly — use shell commands.
 
 ---
 
-## Error handling
+## Error Handling
 
-Common error codes from shell:
-
-- `missing_argument` — user didn't supply a required argument; re-prompt
-- `protected_skill` — tried to uninstall mapickii / mapick / tasa; refuse gracefully
-- `service_unreachable` — backend down or network fail; suggest retry later
-- `unknown_command` — typo or unsupported command; suggest `/mapickii help`
-
-Render error reason in the user's language. Don't echo the JSON verbatim.
+See `reference/errors.md` for codes and playbook. Render errors in user's language.
