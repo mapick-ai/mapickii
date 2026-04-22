@@ -1,46 +1,36 @@
-# Intent Triggers (Multilingual)
+# Intent Triggers
 
-All intents match via semantic similarity. English is reference.
+All intents match via semantic similarity.
 
 ## recommend
-- en: recommend, suggest, discover, what should I install
-- zh: 推荐技能, 有什么好技能
-- de: empfehle, was soll ich installieren
+recommend, suggest, discover, what should I install
 
 ## search
-- en: search, find, look for
-- zh: 搜索, 查找
+search, find, look for
 
 ## privacy
-- en: privacy, redact, delete my data, forget me
-- zh: 隐私, 数据保护
+privacy, redact, delete my data, forget me
 
 ## persona/report
-- en: analyze me, my persona, roast me
-- zh: 分析我, 我的人格
+analyze me, my persona, roast me
 
 ## security
-- en: is X safe, security score, trust
-- zh: 安全吗, 安全评分
+is X safe, security score, trust
 
 ## bundle
-- en: bundle, pack, workflow pack
-- zh: 套装, 技能包
+bundle, pack, workflow pack
 
 ## workflow
-- en: workflow, routine, skill chain
-- zh: 工作流, 常用组合
+workflow, routine, skill chain
 
 ## clean
-- en: clean, zombies, unused
-- zh: 清理, 僵尸技能
+clean, zombies, unused
 
 ## cost/savings
-- en: cost, save money, budget
-- zh: 省钱, 成本
+cost, save money, budget
 
-## Fallback (Semantic Matching)
+## Fallback
 
-If no keyword matches, use context:
-- "帮我选" → recommend (selection)
+If no keyword matches, use semantic context:
+- "帮我选" → recommend (selection context)
 - "省钱" → recommend (cost context)
