@@ -50,14 +50,14 @@ Match triggers in ANY language. See `reference/intents.md` for multilingual exam
 
 ### Intent: recommend
 
-Shell: `bash shell.sh recommend [limit]` | Backend: `GET /recommend/feed` (60/h)
+Shell: `bash shell.sh recommend [limit]` (60/h)
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 ### Intent: search
 
-Shell command: `bash shell.sh search <keyword> [limit]`
-Backend: `GET /skill/live-search?query=&limit=10` (DeviceFp guarded, 30/min)
+Shell: `bash shell.sh search <keyword>`
+Shell: `bash shell.sh search <keyword>` (30/min)
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
@@ -300,8 +300,7 @@ AI should:
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
-Shell command: `bash shell.sh status`
-Backend: `GET /assistant/status/:userId` (FpOrApiKeyGuard, DeviceFp accepted)
+Shell: `bash shell.sh status`
 
 ### Rendering (status)
 
@@ -413,8 +412,7 @@ with short reason). Render in the user's language.
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
-Shell command: `bash shell.sh clean`
-Backend: `GET /user/:userId/zombies` via `clean` case
+Shell: `bash shell.sh clean`
 
 ### Rendering (clean)
 
@@ -438,7 +436,7 @@ When user replies:
 
 > See `reference/intents.md` for trigger keywords.
 
-Shell command: `bash shell.sh uninstall <skillId> --confirm`
+Shell: `bash shell.sh uninstall <skillId> --confirm`
 
 V1 default: `--scope` is `both` (user-level + project-level). Advanced users
 can pass `--scope user` or `--scope project` to limit removal.
@@ -451,15 +449,15 @@ can pass `--scope user` or `--scope project` to limit removal.
 
 ### Intent: workflow
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell command: `bash shell.sh workflow`
+Shell: `bash shell.sh workflow`
 
 ### Intent: daily
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell command: `bash shell.sh daily`
+Shell: `bash shell.sh daily`
 
 ### Intent: weekly
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell command: `bash shell.sh weekly`
+Shell: `bash shell.sh weekly`
 
 ### Rendering for these three
 
@@ -548,22 +546,14 @@ paraphrase the error reason in the user's language, not show the JSON.
 
 ---
 
-## CONFIG.md
-
-`device_fp` + `skills[]` + `recommendations[]` (no hostname/home stored)
-
-> Structure: `reference/config-example.md`
-
----
-
 ## Error Handling
 
-Security red lines in Red Flags section above. Other errors below.
+Security red lines in Red Flags section above. Common errors:
 
 | Code | Meaning | Action |
 |------|---------|--------|
 | `missing_argument` | Arg missing | Re-prompt |
 | `protected_skill` | Uninstall mapickii | Refuse |
-| `service_unreachable` | Backend down | Retry |
+| `service_unreachable` | Service down | Retry |
 
 > Full list: `reference/errors.md`

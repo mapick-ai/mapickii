@@ -20,7 +20,6 @@
   <a href="https://discord.gg/ju8rzvtm5">Discord</a> &nbsp;|&nbsp;
   <a href="#install">Install</a> &nbsp;|&nbsp;
   <a href="#commands">Commands</a> &nbsp;|&nbsp;
-  <a href="README.zh-CN.md">中文</a>
 </p>
 
 ---
@@ -84,38 +83,38 @@ After install, use `/mapickii <command>` inside your AI tool:
 
 ### M1 · Lifecycle
 
-| Command                | Description                                                       |
-| ---------------------- | ----------------------------------------------------------------- |
-| `/mapickii`            | Status overview                                                   |
-| `/mapickii status`     | Detailed status (active / low-frequency / zombie / never-invoked) |
-| `/mapickii clean`      | List zombie Skills and choose which to uninstall                  |
-| `/mapickii workflow`   | High-frequency sequences and bundle matches                       |
-| `/mapickii daily`      | Daily report (yesterday's output + today's picks)                 |
-| `/mapickii weekly`     | Weekly report (summary + trends)                                  |
-| `/mapickii scan`       | Rescan local Skills                                               |
+| Command              | Description                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| `/mapickii`          | Status overview                                                   |
+| `/mapickii status`   | Detailed status (active / low-frequency / zombie / never-invoked) |
+| `/mapickii clean`    | List zombie Skills and choose which to uninstall                  |
+| `/mapickii workflow` | High-frequency sequences and bundle matches                       |
+| `/mapickii daily`    | Daily report (yesterday's output + today's picks)                 |
+| `/mapickii weekly`   | Weekly report (summary + trends)                                  |
+| `/mapickii scan`     | Rescan local Skills                                               |
 
 ### Recommendation & Discovery
 
-| Command                           | Description                                               |
-| --------------------------------- | --------------------------------------------------------- |
-| `/mapickii recommend [limit]`     | Personalized skill recommendations (default 5, cached 24h) |
-| `/mapickii search <keyword>`      | Search skills by keyword                                  |
+| Command                       | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `/mapickii recommend [limit]` | Personalized skill recommendations (default 5, cached 24h) |
+| `/mapickii search <keyword>`  | Search skills by keyword                                   |
 
 ### Bundles (M3)
 
-| Command                         | Description                                      |
-| ------------------------------- | ------------------------------------------------ |
-| `/mapickii bundle`              | List all bundles                                 |
-| `/mapickii bundle <id>`         | Bundle detail (installed / missing + match rate) |
-| `/mapickii bundle recommend`    | Suggest bundles based on installed Skills        |
+| Command                         | Description                                                |
+| ------------------------------- | ---------------------------------------------------------- |
+| `/mapickii bundle`              | List all bundles                                           |
+| `/mapickii bundle <id>`         | Bundle detail (installed / missing + match rate)           |
+| `/mapickii bundle recommend`    | Suggest bundles based on installed Skills                  |
 | `/mapickii bundle install <id>` | Fetch install commands (AI executes, then reports success) |
 
 ### Uninstall
 
-| Command                                   | Description                                          |
-| ----------------------------------------- | ---------------------------------------------------- |
-| `/mapickii uninstall <skillId>`           | Dry-run — returns the paths that would be removed    |
-| `/mapickii uninstall <skillId> --confirm` | Confirm removal (backup + `rm -rf`, user + project)  |
+| Command                                   | Description                                         |
+| ----------------------------------------- | --------------------------------------------------- |
+| `/mapickii uninstall <skillId>`           | Dry-run — returns the paths that would be removed   |
+| `/mapickii uninstall <skillId> --confirm` | Confirm removal (backup + `rm -rf`, user + project) |
 
 Advanced: `--scope user` or `--scope project` to restrict removal. Default is
 `both`.
@@ -175,14 +174,14 @@ Mapickii is designed to minimize what leaves your machine:
 
 ### Privacy commands
 
-| Command                                          | Description                                        |
-| ------------------------------------------------ | -------------------------------------------------- |
-| `/mapickii privacy status`                       | Show consent + trusted skills + redaction engine   |
-| `/mapickii privacy trust <skillId>`              | Allow a specific skill to see unredacted content   |
-| `/mapickii privacy untrust <skillId>`            | Revoke a trust grant                               |
-| `/mapickii privacy delete-all --confirm`         | GDPR right to erasure                              |
-| `/mapickii privacy consent-agree [version]`      | Record consent (called automatically by init)      |
-| `/mapickii privacy consent-decline`              | Decline consent → permanent local-only mode        |
+| Command                                     | Description                                      |
+| ------------------------------------------- | ------------------------------------------------ |
+| `/mapickii privacy status`                  | Show consent + trusted skills + redaction engine |
+| `/mapickii privacy trust <skillId>`         | Allow a specific skill to see unredacted content |
+| `/mapickii privacy untrust <skillId>`       | Revoke a trust grant                             |
+| `/mapickii privacy delete-all --confirm`    | GDPR right to erasure                            |
+| `/mapickii privacy consent-agree [version]` | Record consent (called automatically by init)    |
+| `/mapickii privacy consent-decline`         | Decline consent → permanent local-only mode      |
 
 ## Directory layout
 
