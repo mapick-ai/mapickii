@@ -319,7 +319,86 @@ _redact() {
     cat
     return
   fi
+  # V1 PR-13 TC-8A.3: honor the emergency disable flag set via
+  # `/mapickii privacy disable-redact`. When disabled, skip redaction entirely.
+  local disabled
+  disabled="$(_config_get redact_disabled 2>/dev/null || echo '')"
+  if [[ "$disabled" == "true" ]]; then
+    cat
+    return
+  fi
   python3 "$redactor" 2>/dev/null || cat
+}
+
+# V1 PR-13 TC-8A.1: kill_switch check — called before dispatch in main case.
+# Caches /system/status response for 5 minutes. On DB/network failure, stays
+# conservative (uses cached state if available; else allows through).
+_check_kill_switch() {
+  local cmd="$1"
+
+  # Local-only whitelist commands always pass (don't depend on backend):
+  case "$cmd" in
+    id|identity|version|help|init|privacy:disable-redact|privacy:enable-redact)
+      return 0
+      ;;
+    privacy)
+      # `privacy disable-redact` / `enable-redact` subcommands — pass too.
+      # Full subcommand is in $2 if set; main case will still enforce auth below.
+      # Here we just short-circuit for any privacy sub (they are local ops).
+      return 0
+      ;;
+  esac
+
+  local cache_dir="${CONFIG_DIR}/cache"
+  local cache_file="${cache_dir}/system-status.json"
+  mkdir -p "$cache_dir" 2>/dev/null
+  local now=$(date +%s) mtime=0
+  local status=""
+
+  if [[ -f "$cache_file" ]]; then
+    mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+    if [[ $((now - mtime)) -lt 300 ]]; then
+      status="$(cat "$cache_file" 2>/dev/null)"
+    fi
+  fi
+
+  if [[ -z "$status" ]]; then
+    # 5-min TTL expired (or first call) — refresh. Short timeout: 3s.
+    local fresh
+    fresh=$(curl -sS -m 3 "${API_BASE}/system/status" 2>/dev/null)
+    if [[ -n "$fresh" ]] && echo "$fresh" | jq -e '.kill_switch' >/dev/null 2>&1; then
+      echo "$fresh" > "$cache_file" 2>/dev/null
+      status="$fresh"
+    elif [[ -f "$cache_file" ]]; then
+      # API unreachable — keep using stale cache (保守策略：不主动踢用户)
+      status="$(cat "$cache_file")"
+    else
+      # First call + API unreachable → allow through (conservative)
+      return 0
+    fi
+  fi
+
+  local enabled readonly_flag reason_en
+  enabled=$(echo "$status" | jq -r '.kill_switch // false' 2>/dev/null || echo false)
+  readonly_flag=$(echo "$status" | jq -r '.readonly // false' 2>/dev/null || echo false)
+  reason_en=$(echo "$status" | jq -r '.reasonEn // ""' 2>/dev/null || echo "")
+
+  if [[ "$enabled" == "true" ]]; then
+    jq -cn --arg r "$reason_en" '{intent:"system", status:"maintenance", reasonEn:$r, messageEn:"Mapick is undergoing emergency maintenance. Please try again later."}'
+    exit 0
+  fi
+
+  if [[ "$readonly_flag" == "true" ]]; then
+    # Only write-ish commands get blocked in readonly mode
+    case "$cmd" in
+      track|share|privacy:delete-all|consent:agree|consent:decline|clean|scan|uninstall|security:report|recommend:track|bundle:track-installed)
+        jq -cn --arg r "$reason_en" '{intent:"system", status:"readonly", reasonEn:$r, messageEn:"Mapick is in read-only maintenance mode. Writes are disabled."}'
+        exit 0
+        ;;
+    esac
+  fi
+
+  return 0
 }
 
 _http() {
@@ -1134,6 +1213,11 @@ _bundle_track_installed() {
 
 shift || true
 
+# V1 PR-13 TC-8A.1: kill_switch global gate — runs before dispatch.
+# On kill_switch=true, prints maintenance JSON and exits 0. On readonly=true,
+# write commands return 503; reads pass.
+_check_kill_switch "${COMMAND}"
+
 # Auto scan refresh: TTL check for commands that need network or local data display
 case "${COMMAND}" in
   status|clean|workflow|daily|weekly)
@@ -1745,8 +1829,22 @@ EOF_CFG
         _config_set consent_declined_at "$now_utc"
         echo "{\"intent\":\"privacy:consent-decline\",\"mode\":\"local_only\",\"declinedAt\":\"${now_utc}\",\"message\":\"Mapickii is now in local-only mode. scan / clean / uninstall still work; no data goes to the backend.\"}"
         ;;
+      disable-redact)
+        # V1 PR-13 TC-8A.3: emergency escape hatch for false-positive redaction
+        # issues. User can temporarily disable the local redactor if code-context
+        # conversations are being broken. Sensitive data will be passed to skills
+        # as-is until re-enabled. init will warn about this on every invocation.
+        _config_set redact_disabled "true"
+        _config_set redact_disabled_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo '{"intent":"privacy:disable-redact","status":"disabled","warning":"Sensitive data will be passed to Skills AS-IS. Re-enable with: /mapickii privacy enable-redact"}'
+        ;;
+      enable-redact)
+        _config_del redact_disabled
+        _config_del redact_disabled_at
+        echo '{"intent":"privacy:enable-redact","status":"enabled","message":"Local redaction is active again."}'
+        ;;
       *)
-        echo '{"intent":"privacy","error":"unknown_subcommand","hint":"Available: status | trust <skillId> | untrust <skillId> | delete-all --confirm | consent-agree [version] | consent-decline"}'
+        echo '{"intent":"privacy","error":"unknown_subcommand","hint":"Available: status | trust <skillId> | untrust <skillId> | delete-all --confirm | consent-agree [version] | consent-decline | disable-redact | enable-redact"}'
         ;;
     esac
     ;;
