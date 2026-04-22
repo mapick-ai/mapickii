@@ -1,6 +1,6 @@
 ---
 name: mapickii
-description: Use when users ask for skill recommendations, skill search, privacy protection, zombie cleanup, persona reports, or security scores in OpenClaw environment.
+description: Use when users ask for skill recommendations, search, privacy, zombie cleanup, persona reports, security scores, bundles, workflows, or cost savings in OpenClaw environment.
 metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["python3", "jq", "curl"] }, "primaryEnv": "MAPICKII_API_BASE" } }
 ---
 
