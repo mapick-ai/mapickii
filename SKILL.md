@@ -487,7 +487,9 @@ These signals mean you're about to violate a rule:
 
 ## Lifecycle Model
 
-See `reference/lifecycle.md` for stage definitions and triggers.
+Install → First use → Active → Declining → Zombie → Uninstall
+
+> Details: `reference/lifecycle.md`
 
 ---
 
@@ -548,10 +550,20 @@ paraphrase the error reason in the user's language, not show the JSON.
 
 ## CONFIG.md
 
-See `reference/api.md` for structure. Do not write directly — use shell commands.
+`device_fp` + `skills[]` + `recommendations[]` (no hostname/home stored)
+
+> Structure: `reference/config-example.md`
 
 ---
 
 ## Error Handling
 
-See `reference/errors.md` for codes and playbook. Render errors in user's language.
+Security red lines in Red Flags section above. Other errors below.
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| `missing_argument` | Arg missing | Re-prompt |
+| `protected_skill` | Uninstall mapickii | Refuse |
+| `service_unreachable` | Backend down | Retry |
+
+> Full list: `reference/errors.md`
