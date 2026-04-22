@@ -283,3 +283,39 @@ wc -l SKILL.md reference/*.md
 若需进一步压缩 SKILL.md 至 ~200 行，可移除：
 - 各章节的 Rendering 详细说明 → `reference/rendering.md`
 - Bundle install 详细流程 → `reference/bundle.md`
+
+---
+
+## 11. Skill Refactor V2 (2026-04-22)
+
+### 11.1 Claude + Codex 评审改进点
+
+- ✅ description 补 bundle/workflow/cost 触发词
+- ✅ DOT 流程图 → Markdown 决策表（省 token，OpenClaw 可读）
+- ✅ reference 外链保留一行摘要（不只写 "See reference"）
+- ✅ CONFIG 示例无 hostname/home 等敏感字段
+- ✅ 安全红线表格内联 SKILL.md（不过度外链）
+- ✅ reference/errors.md 含安全红线
+
+### 11.2 最终结构
+
+| 文件 | 行数 | 词数 |
+|------|------|------|
+| SKILL.md | 569 | 3083 |
+| reference/api.md | 20 | - |
+| reference/errors.md | 28 | - |
+| reference/lifecycle.md | 15 | - |
+| reference/intents.md | 45 | - |
+| reference/config-example.md | 22 | - |
+
+### 11.3 验证
+
+```bash
+wc -l SKILL.md && wc -w SKILL.md
+# 569 行 / 3083 词（无中文字符）
+```
+
+### 11.4 未解决的问题
+
+- Rendering 详细说明仍占大量篇幅，可进一步压缩
+- API 路由需同步修复（见 Phase B）
