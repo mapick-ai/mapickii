@@ -30,66 +30,27 @@ conversation language.
 **Why this is first**: Mapickii's core value is helping users find skills they
 don't have but should. Everything else is secondary.
 
-```dot
-digraph intent_router {
-    rankdir=TB;
-    node [shape=diamond, style=filled, fillcolor="#f0f0f0"];
-    edge [fontsize=10];
-    
-    "User input" [shape=ellipse, fillcolor="#e0e0e0"];
-    
-    "recommend?" [label="recommend/\nsuggest/\ndiscover"];
-    "search?" [label="search/\nfind"];
-    "privacy?" [label="privacy/\ndata"];
-    "persona?" [label="persona/\nreport"];
-    "security?" [label="security/\ntrust"];
-    "status?" [label="status/\noverview"];
-    "clean?" [label="clean/\nzombies"];
-    "workflow?" [label="workflow/\nroutine"];
-    "bundle?" [label="bundle/\npack"];
-    
-    "shell recommend" [shape=box, style=rounded];
-    "shell search" [shape=box, style=rounded];
-    "shell privacy" [shape=box, style=rounded];
-    "shell report" [shape=box, style=rounded];
-    "shell security" [shape=box, style=rounded];
-    "shell status" [shape=box, style=rounded];
-    "shell clean" [shape=box, style=rounded];
-    "shell workflow" [shape=box, style=rounded];
-    "shell bundle" [shape=box, style=rounded];
-    
-    "User input" -> "recommend?";
-    "User input" -> "search?";
-    "User input" -> "privacy?";
-    "User input" -> "persona?";
-    "User input" -> "security?";
-    "User input" -> "status?";
-    "User input" -> "clean?";
-    "User input" -> "workflow?";
-    "User input" -> "bundle?";
-    
-    "recommend?" -> "shell recommend" [label="yes"];
-    "search?" -> "shell search" [label="yes"];
-    "privacy?" -> "shell privacy" [label="yes"];
-    "persona?" -> "shell report" [label="yes"];
-    "security?" -> "shell security" [label="yes"];
-    "status?" -> "shell status" [label="yes"];
-    "clean?" -> "shell clean" [label="yes"];
-    "workflow?" -> "shell workflow" [label="yes"];
-    "bundle?" -> "shell bundle" [label="yes"];
-    
-    {rank=same; "recommend?"; "search?"; "privacy?";}
-    {rank=same; "persona?"; "security?"; "status?";}
-    {rank=same; "clean?"; "workflow?"; "bundle?";}
-}
-```
+## Intent Routing
 
-Match triggers in ANY language. English shown as reference only.
+| Intent | Shell Command | Triggers |
+|--------|---------------|----------|
+| recommend | `recommend [limit]` | recommend/suggest/discover |
+| search | `search <keyword>` | search/find |
+| privacy | `privacy status/trust/delete` | privacy/redact |
+| persona | `report` | persona/analyze |
+| security | `security <skillId>` | security/trust |
+| status | `status` | status/overview |
+| clean | `clean` | clean/zombies |
+| workflow | `workflow` | workflow/routine |
+| bundle | `bundle` | bundle/pack |
+| daily | `daily` | daily/today |
+| weekly | `weekly` | weekly |
+
+Match triggers in ANY language. See `reference/intents.md` for multilingual examples.
 
 ### Intent: recommend
 
-Shell command: `bash shell.sh recommend [limit]`
-Backend: `GET /recommend/feed?limit=5` (DeviceFp guarded, 60/h rate limit)
+Shell: `bash shell.sh recommend [limit]` | Backend: `GET /recommend/feed` (60/h)
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
