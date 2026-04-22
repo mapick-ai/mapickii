@@ -1,31 +1,31 @@
-# Error Handling Reference
+# Error Handling & Security Red Lines
 
 ## Shell Error Codes
 
 | Code | Meaning | AI Action |
 |------|---------|-----------|
-| `missing_argument` | Required arg not supplied | Re-prompt user |
-| `protected_skill` | Tried to uninstall mapickii/mapick/tasa | Refuse gracefully |
-| `service_unreachable` | Backend down / network fail | Suggest retry later |
-| `unknown_command` | Typos / unsupported | Suggest `/mapickii help` |
-| `disabled_in_local_mode` | Consent declined | Show opt-in message |
+| `missing_argument` | Required arg missing | Re-prompt |
+| `protected_skill` | Tried to uninstall mapickii | Refuse |
+| `service_unreachable` | Backend down | Suggest retry |
+| `disabled_in_local_mode` | Consent declined | Show opt-in |
 | `consent_required` | First install | Run consent flow |
 
-Render errors in user's language. Never echo JSON verbatim.
+## Security Red Lines (MANDATORY)
 
-## Bundle Install Failure Playbook
+| Scenario | Required Action |
+|----------|-----------------|
+| Grade C skill | **DO NOT show install button.** Show alternatives + red warning. User must acknowledge. |
+| `delete-all` request | **Re-state destructive scope.** Require second confirmation before executing. |
+| Local-only + recommend/search | Refuse with "requires consent" |
+| Empty search results | Show fallback template |
+
+## Bundle Failure Playbook
 
 | Failure | Action |
 |---------|--------|
-| `clawhub: command not found` | Stop; link to openclaw.io; ask retry |
-| Network timeout / DNS fail | Skip current, continue; summarize at end |
-| Permission denied | Report path; suggest sudo; don't auto-sudo |
-| "already installed" (exit 0) | Count as success |
-| Unknown error | Report first 200 chars stderr; continue |
+| `clawhub not found` | Stop; link openclaw.io; ask retry |
+| Network timeout | Skip current, continue; summarize |
+| Permission denied | Report path; suggest sudo |
+| "already installed" | Count as success |
 
-If ALL commands fail → do NOT call `bundle:track-installed`.
-
-## Persona Report Limits
-
-- Backend 429 → "Rate limit exceeded (10/day). Try tomorrow."
-- HTML > 200KB → "Report too large. Ask AI to regenerate shorter version."
+Render errors in user's language. Never echo JSON.

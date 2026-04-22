@@ -1,44 +1,46 @@
-# Intent Triggers (Multilingual Reference)
+# Intent Triggers (Multilingual)
 
-All intents match in ANY language. English below is reference only.
+All intents match via semantic similarity. English is reference.
 
 ## recommend
-
-**English:** recommend, suggest, find skill, what should I install, best skills, what am I missing, any suggestions, discover, skills for me, good skills
-
-**Examples:**
-- zh-CN: 推荐技能 / 有什么好技能 / 我应该安装什么
-- de: empfehle / was soll ich installieren
-- ja: おすすめ / いいスキル / 何を入れるべき
+- en: recommend, suggest, discover, what should I install
+- zh: 推荐技能, 有什么好技能
+- de: empfehle, was soll ich installieren
 
 ## search
-
-**English:** search, find, look for, is there a skill for, find a skill that, anything for X
+- en: search, find, look for
+- zh: 搜索, 查找
 
 ## privacy
+- en: privacy, redact, delete my data, forget me
+- zh: 隐私, 数据保护
 
-**English:** privacy, redact, who can see my data, protect my data, stop tracking, delete my data, forget me, erase my account, anonymous mode
-
-## persona / report
-
-**English:** analyze me, my persona, my mapick report, who am I as a developer, developer type, roast me
-
-**Examples:** 分析我 / 我的人格 / analysiere mich / 私を分析して
+## persona/report
+- en: analyze me, my persona, roast me
+- zh: 分析我, 我的人格
 
 ## security
+- en: is X safe, security score, trust
+- zh: 安全吗, 安全评分
 
-**English:** is X safe, security score of X, safety of X, can I trust X, scan X, X trustworthy, audit X
-
-**Examples:** X 安全吗 / ist X sicher / Xは安全ですか
-
-## clean
-
-**English:** clean, cleanup, zombies, dead skills, unused, prune, get rid of unused skills
+## bundle
+- en: bundle, pack, workflow pack
+- zh: 套装, 技能包
 
 ## workflow
+- en: workflow, routine, skill chain
+- zh: 工作流, 常用组合
 
-**English:** workflow, routine, pipeline, skill chain, common combos
+## clean
+- en: clean, zombies, unused
+- zh: 清理, 僵尸技能
 
-## status
+## cost/savings
+- en: cost, save money, budget
+- zh: 省钱, 成本
 
-**English:** status, overview, dashboard, my skills, skill stats, how am I doing, skill summary
+## Fallback (Semantic Matching)
+
+If no keyword matches, use context:
+- "帮我选" → recommend (selection)
+- "省钱" → recommend (cost context)
