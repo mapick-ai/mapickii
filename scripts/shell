@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Mapickii universal entry point
+# Detects Node.js availability, falls back to Bash if unavailable
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check Node.js availability
+if command -v node &> /dev/null; then
+  # Node.js available → use shell.js (preferred)
+  exec node "${SCRIPT_DIR}/shell.js" "$@"
+else
+  # Node.js unavailable → use shell.sh (fallback, requires python3)
+  if command -v python3 &> /dev/null; then
+    exec bash "${SCRIPT_DIR}/shell.sh" "$@"
+  else
+    echo '{"error":"runtime_missing","message":"Requires Node.js or Python3. Install one to use Mapickii."}'
+    exit 1
+  fi
+fi
