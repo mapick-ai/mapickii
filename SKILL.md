@@ -1,7 +1,7 @@
 ---
 name: mapickii
 description: Use when users ask for skill recommendations, search, privacy, zombie cleanup, persona reports, security scores, bundles, workflows, or cost savings in OpenClaw environment.
-metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["python3", "jq", "curl"] }, "primaryEnv": "MAPICKII_API_BASE" } }
+metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["node"] }, "primaryEnv": "MAPICKII_API_BASE" } }
 ---
 
 # Mapickii
@@ -16,7 +16,7 @@ Priority: recommendation = privacy > persona sharing > safety score > cleanup > 
 - User is NOT in OpenClaw environment (other AI platforms have different skill systems)
 - User asks about general recommendations (books, movies, restaurants) — not skill-specific
 - User's conversation has no mention of skills, tools, or AI capabilities
-- Platform lacks `python3`, `jq`, or `curl` (metadata.requires check failed)
+- Platform lacks `node` (metadata.requires check failed)
 
 If these apply, respond normally without invoking Mapickii commands.
 
@@ -50,14 +50,14 @@ Match triggers in ANY language. See `reference/intents.md` for multilingual exam
 
 ### Intent: recommend
 
-Shell: `bash shell.sh recommend [limit]` (60/h)
+Shell: `node scripts/shell.js recommend [limit]` (60/h)
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
 ### Intent: search
 
-Shell: `bash shell.sh search <keyword>`
-Shell: `bash shell.sh search <keyword>` (30/min)
+Shell: `node scripts/shell.js search <keyword>`
+Shell: `node scripts/shell.js search <keyword>` (30/min)
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
@@ -109,7 +109,7 @@ After rendering a recommend/search result, wait for the user's reply. On reply:
    natural-language reference).
 2. From the item's `installCommands[]`, pick the entry where `platform` is
    `openclaw` and run that `command` in the user's shell.
-3. On success, call `bash shell.sh recommend:track <recId> <skillId> installed`
+3. On success, call `node scripts/shell.js recommend:track <recId> <skillId> installed`
    so the backend can tune future recommendations.
 4. On failure, reply with the error (translated), and suggest retry or skip.
 5. Confirm to user: "✅ {skillName} installed. Want to see more?"
@@ -135,12 +135,12 @@ chapter explains the protections.
 
 ### Subcommands
 
-- `bash shell.sh privacy status` — show current consent + trusted skills list
-- `bash shell.sh privacy trust <skillId>` — allow skill to see unredacted content
-- `bash shell.sh privacy untrust <skillId>` — revoke previous trust grant
-- `bash shell.sh privacy delete-all --confirm` — GDPR erasure: wipe local + backend
-- `bash shell.sh privacy consent-agree <version>` — record user consent (called from init flow)
-- `bash shell.sh privacy consent-decline` — user declined → permanent local-only mode
+- `node scripts/shell.js privacy status` — show current consent + trusted skills list
+- `node scripts/shell.js privacy trust <skillId>` — allow skill to see unredacted content
+- `node scripts/shell.js privacy untrust <skillId>` — revoke previous trust grant
+- `node scripts/shell.js privacy delete-all --confirm` — GDPR erasure: wipe local + backend
+- `node scripts/shell.js privacy consent-agree <version>` — record user consent (called from init flow)
+- `node scripts/shell.js privacy consent-decline` — user declined → permanent local-only mode
 
 ### First-install consent flow
 
@@ -152,8 +152,8 @@ When shell returns `status: "consent_required"`:
    - **Agree** — Mapickii uploads anonymous behavior data, returns recommendations.
    - **Decline** — Mapickii works in local-only mode (scan / clean / uninstall
      only, no recommendations, no backend calls).
-3. If user agrees → call `bash shell.sh privacy consent-agree 1.0`.
-4. If user declines → call `bash shell.sh privacy consent-decline`. Then tell
+3. If user agrees → call `node scripts/shell.js privacy consent-agree 1.0`.
+4. If user declines → call `node scripts/shell.js privacy consent-decline`. Then tell
    the user what's still available locally and what's gone; **do not re-prompt
    consent on future runs**.
 5. If user neither agrees nor declines in this session, state stays undecided;
@@ -161,7 +161,7 @@ When shell returns `status: "consent_required"`:
 
 ### Local-only mode behavior
 
-If `bash shell.sh init` returns `status: "local_only"` (or any other command
+If `node scripts/shell.js init` returns `status: "local_only"` (or any other command
 returns `error: "disabled_in_local_mode"`):
 
 - Confirm local-only state to the user **once** per session.
@@ -174,10 +174,10 @@ returns `error: "disabled_in_local_mode"`):
 ### Redaction engine (local only)
 
 Before sharing any conversation text with **other** skills, AI **should** pipe
-it through `scripts/redact.py`:
+it through `scripts/redact.js`:
 
 ```bash
-echo "$USER_TEXT" | python3 ~/.openclaw/skills/mapickii/scripts/redact.py
+echo "$USER_TEXT" | node ~/.openclaw/skills/mapickii/scripts/redact.js
 ```
 
 This strips API keys (Anthropic / OpenAI / Stripe / GitHub / AWS / Slack /
@@ -208,7 +208,7 @@ Before executing, **re-state the destructive scope** in the user's language:
 > trusted skills, recommendation feedback, share reports). It cannot be undone.
 
 Only after the user confirms a second time, execute
-`bash shell.sh privacy delete-all --confirm`. On success, report which tables
+`node scripts/shell.js privacy delete-all --confirm`. On success, report which tables
 were cleared (from the shell response).
 
 ---
@@ -300,7 +300,7 @@ AI should:
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
-Shell: `bash shell.sh status`
+Shell: `node scripts/shell.js status`
 
 ### Rendering (status)
 
@@ -366,7 +366,7 @@ skills to complete a workflow.
 
 ### Bundle install — two-step flow (V1, by design)
 
-**Step 1**: `bash shell.sh bundle:install <bundleId>` returns:
+**Step 1**: `node scripts/shell.js bundle:install <bundleId>` returns:
 
 ```json
 {
@@ -381,7 +381,7 @@ skills to complete a workflow.
 ```
 
 **Step 2**: AI executes each `installCommands[i].command` in the user's shell,
-tracks per-command result, then calls `bash shell.sh bundle:track-installed <bundleId>`.
+tracks per-command result, then calls `node scripts/shell.js bundle:track-installed <bundleId>`.
 
 **Step 3**: Report summary to the user in their language: "Installed N of M
 skills from bundle <name>."
@@ -412,7 +412,7 @@ with short reason). Render in the user's language.
 
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
 
-Shell: `bash shell.sh clean`
+Shell: `node scripts/shell.js clean`
 
 ### Rendering (clean)
 
@@ -425,7 +425,7 @@ When shell returns a zombie list:
 
 When user replies:
 - Numbers (e.g. `1 2`) → look up skillIds from the last rendered list, call
-  `bash shell.sh clean:track <skillId>` for each, then `bash shell.sh uninstall <skillId> --confirm`.
+  `node scripts/shell.js clean:track <skillId>` for each, then `node scripts/shell.js uninstall <skillId> --confirm`.
 - `all` → apply to every zombie.
 - `skip` → end the flow; reply "ok".
 
@@ -436,7 +436,7 @@ When user replies:
 
 > See `reference/intents.md` for trigger keywords.
 
-Shell: `bash shell.sh uninstall <skillId> --confirm`
+Shell: `node scripts/shell.js uninstall <skillId> --confirm`
 
 V1 default: `--scope` is `both` (user-level + project-level). Advanced users
 can pass `--scope user` or `--scope project` to limit removal.
@@ -449,15 +449,15 @@ can pass `--scope user` or `--scope project` to limit removal.
 
 ### Intent: workflow
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell: `bash shell.sh workflow`
+Shell: `node scripts/shell.js workflow`
 
 ### Intent: daily
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell: `bash shell.sh daily`
+Shell: `node scripts/shell.js daily`
 
 ### Intent: weekly
 > See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell: `bash shell.sh weekly`
+Shell: `node scripts/shell.js weekly`
 
 ### Rendering for these three
 
@@ -493,7 +493,7 @@ Install → First use → Active → Declining → Zombie → Uninstall
 
 ## Auto-trigger (on every new conversation)
 
-Shell auto-runs `bash shell.sh init` when AI detects a new Mapickii session.
+Shell auto-runs `node scripts/shell.js init` when AI detects a new Mapickii session.
 Shell is idempotent: 30-minute cooldown prevents repeated full scans.
 
 Responses:
@@ -523,11 +523,11 @@ PR-4 will add: `/mapickii recommend`, `/mapickii search <keyword>`.
 PR-5 will add: `/mapickii privacy (status / delete-all / trust / consent-*)`.
 
 Internal commands (invoked by AI, not typed by user):
-- `bash shell.sh clean:track <skillId>` — record uninstall event
-- `bash shell.sh bundle:track-installed <bundleId>` — record bundle install
+- `node scripts/shell.js clean:track <skillId>` — record uninstall event
+- `node scripts/shell.js bundle:track-installed <bundleId>` — record bundle install
 
 Debug only:
-- `bash shell.sh id` — show local device fingerprint
+- `node scripts/shell.js id` — show local device fingerprint
 
 ---
 
