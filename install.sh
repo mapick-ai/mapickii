@@ -107,9 +107,19 @@ info "Downloading Mapickii Skill (${VERSION})..."
 TMP_DIR=$(mktemp -d)
 trap "rm -rf ${TMP_DIR}" EXIT
 
-if ! curl -fsSL "${TARBALL_URL}" | tar -xz -C "${TMP_DIR}" --strip-components=1; then
-  error "Failed to download or extract ${TARBALL_URL}"
+# Download to file first (curl --retry needs a clean restart point; piping into
+# tar makes retries useless because tar has already consumed partial data).
+TARBALL="${TMP_DIR}/mapickii.tar.gz"
+if ! curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused \
+     "${TARBALL_URL}" -o "${TARBALL}"; then
+  error "Failed to download ${TARBALL_URL} (after 3 retries)"
 fi
+
+if ! tar -xzf "${TARBALL}" -C "${TMP_DIR}" --strip-components=1; then
+  error "Failed to extract tarball (file may be corrupt: ${TARBALL})"
+fi
+
+rm -f "${TARBALL}"
 
 ok "Download complete"
 
