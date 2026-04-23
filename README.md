@@ -103,7 +103,7 @@ wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.1/install.sh
 Pin a specific version:
 
 ```bash
-MAPICKII_VERSION=v1.0.0 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
+MAPICKII_VERSION=v0.0.1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
 ```
 
 Then just talk to your agent in any language:

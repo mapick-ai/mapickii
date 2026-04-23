@@ -3,11 +3,11 @@
 #
 # Install or update Mapickii Skill with a single command:
 #
-#   curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh | bash
-#   wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v1.0.1/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.1/install.sh | bash
+#   wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.1/install.sh | bash
 #
 # Options (via environment variables):
-#   MAPICKII_VERSION=v1.0.0  bash -c "$(curl -fsSL ...)"   # Install specific version
+#   MAPICKII_VERSION=v0.0.1  bash -c "$(curl -fsSL ...)"   # Install specific version
 #   MAPICKII_REPO=owner/repo bash -c "$(curl -fsSL ...)"   # Override source repo
 
 set -e
