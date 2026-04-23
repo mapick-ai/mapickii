@@ -78,10 +78,26 @@ fi
 
 ok "OpenClaw detected: ${OPENCLAW_PATH}"
 
-# -- Download files to temp dir ------------------------------------------------
+# -- Detect runtime (Node.js preferred, Python3 fallback) ----------------------
 
-BRANCH="${VERSION}"
-RAW_BASE="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+HAS_NODE=0
+HAS_PY3=0
+command -v node    &>/dev/null && HAS_NODE=1
+command -v python3 &>/dev/null && HAS_PY3=1
+
+if [[ "${HAS_NODE}" -eq 1 ]]; then
+  ok "Node.js detected: $(node --version)"
+elif [[ "${HAS_PY3}" -eq 1 ]]; then
+  warn "Node.js not found; Python3 fallback will be used ($(python3 --version 2>&1))"
+else
+  warn "Neither Node.js nor Python3 detected."
+  warn "Mapickii commands will not run until you install Node.js (>=18) or Python3."
+fi
+
+# -- Download tarball ----------------------------------------------------------
+
+REF="${VERSION}"
+TARBALL_URL="https://github.com/${REPO}/archive/${REF}.tar.gz"
 
 echo ""
 echo -e "${DIM}────────────────────────────────────────${NC}"
@@ -91,22 +107,15 @@ info "Downloading Mapickii Skill (${VERSION})..."
 TMP_DIR=$(mktemp -d)
 trap "rm -rf ${TMP_DIR}" EXIT
 
-mkdir -p "${TMP_DIR}/scripts"
-
-curl -fsSL "${RAW_BASE}/SKILL.md" -o "${TMP_DIR}/SKILL.md" \
-  || error "Failed to download SKILL.md"
-
-curl -fsSL "${RAW_BASE}/scripts/shell.sh" -o "${TMP_DIR}/scripts/shell.sh" \
-  || error "Failed to download scripts/shell.sh"
-
-chmod +x "${TMP_DIR}/scripts/shell.sh"
+if ! curl -fsSL "${TARBALL_URL}" | tar -xz -C "${TMP_DIR}" --strip-components=1; then
+  error "Failed to download or extract ${TARBALL_URL}"
+fi
 
 ok "Download complete"
 
 # -- Install to OpenClaw -------------------------------------------------------
 
 target_dir="${HOME}/.openclaw/skills/mapickii"
-target_scripts="${target_dir}/scripts"
 
 echo ""
 info "Installing to ${BOLD}OpenClaw${NC} ..."
@@ -118,16 +127,26 @@ if [[ -f "${target_dir}/CONFIG.md" ]]; then
   cp "${target_dir}/CONFIG.md" "${BACKUP_CONFIG}"
 fi
 
-if [[ -f "${target_dir}/SKILL.md" ]]; then
+if [[ -d "${target_dir}" ]]; then
   warn "Existing installation found, overwriting..."
   rm -rf "${target_dir}"
 fi
 
-mkdir -p "${target_scripts}"
+mkdir -p "${target_dir}"
 
-cp "${TMP_DIR}/SKILL.md" "${target_dir}/SKILL.md"
-cp "${TMP_DIR}/scripts/shell.sh" "${target_scripts}/shell.sh"
-chmod +x "${target_scripts}/shell.sh"
+# Copy runtime files (Skill payload, not repo boilerplate).
+# Keep this list in sync with what SKILL.md references.
+INSTALL_ITEMS=(SKILL.md package.json scripts reference prompts)
+for item in "${INSTALL_ITEMS[@]}"; do
+  if [[ -e "${TMP_DIR}/${item}" ]]; then
+    cp -R "${TMP_DIR}/${item}" "${target_dir}/"
+  fi
+done
+
+# Ensure entry scripts are executable
+for exe in scripts/shell scripts/shell.js scripts/shell.sh scripts/redact.js scripts/redact.py; do
+  [[ -f "${target_dir}/${exe}" ]] && chmod +x "${target_dir}/${exe}"
+done
 
 # Restore user config if present
 if [[ -n "${BACKUP_CONFIG}" ]]; then
@@ -136,13 +155,12 @@ if [[ -n "${BACKUP_CONFIG}" ]]; then
   echo -e "    ${DIM}Restored: CONFIG.md${NC}"
 fi
 
-if [[ ! -f "${target_dir}/SKILL.md" ]] || [[ ! -f "${target_scripts}/shell.sh" ]]; then
-  error "Installation failed (files missing after copy)."
+if [[ ! -f "${target_dir}/SKILL.md" ]] || [[ ! -f "${target_dir}/scripts/shell" ]]; then
+  error "Installation failed (required files missing after copy)."
 fi
 
 ok "OpenClaw installed successfully"
-echo -e "    ${DIM}${target_dir}/SKILL.md${NC}"
-echo -e "    ${DIM}${target_scripts}/shell.sh${NC}"
+echo -e "    ${DIM}${target_dir}/${NC}"
 
 # -- Summary -------------------------------------------------------------------
 
