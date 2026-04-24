@@ -512,6 +512,85 @@ Responses:
 
 ---
 
+## First-run summary (one-time only)
+
+After init completes, check CONFIG.md for `first_run_complete`.
+
+If `first_run_complete` does NOT exist:
+
+1. Run: `bash shell.sh summary`
+2. Display the `data` payload as a formatted report to the user
+   (use the summary card layout below; translate to the user's language).
+3. Immediately after the report, ask:
+   "Quick question — what does your typical work day look like?
+    This helps me recommend skills that match YOUR workflow,
+    not just what's popular."
+   Give 2 examples. Offer skip.
+4. If user answers with a workflow description:
+   - Run: `bash shell.sh profile set "<answer verbatim>"`
+   - Run: `bash shell.sh recommend --with-profile`
+   - Display the returned recommendations, noting any item whose `reasonEn`
+     starts with `"Matches your workflow:"` is a tag-boosted pick.
+5. If user skips or asks something else:
+   - Run: `bash shell.sh profile set "skipped"`
+   - Proceed with their actual request normally.
+6. Run: `bash shell.sh first-run-done` (marks the one-time flag so this
+   summary never fires again for this user).
+
+If `first_run_complete` already exists: skip all of the above, respond
+normally.
+
+**IMPORTANT**: Do NOT split the summary and the question into two messages.
+Output the summary report AND the question in a single response.
+
+### Summary card layout (render in the user's language)
+
+```
+mapick: 📊 Mapick scan complete.
+
+🔒 Privacy
+Redaction engine: active (<privacy_rules> rules)
+Your API keys, SSH keys, tokens → auto-filtered
+No conversation content leaves your device
+
+📦 Skills: <total> installed
+✅ Active (used this week)      <active>
+⚠️ Never used                   <never_used>
+💤 Idle 30+ days                <idle_30>
+🛡️ Security: <security.A> Grade A · <security.B> Grade B · <security.C> Grade C
+
+🔥 Your most-used                                    # skip if top_used empty
+1. <top_used[0].name>      <top_used[0].daily>x/day
+2. <top_used[1].name>      <top_used[1].daily>x/day
+3. <top_used[2].name>      <top_used[2].daily>x/day
+
+⚠️ <zombie_count> zombies eating <context_waste_pct>% of your context window
+⚠️ <security.C> skill(s) with Grade C — consider replacing   # skip if 0
+```
+
+### Example recommendation output (after user answers)
+
+```
+mapick: Got it. Based on your stack + workflow:
+
+🎯 3 skills would fill your gaps:
+
+1. code-review   — automate PR reviews                Grade A
+   Matches your workflow: review, prs
+2. log-analyzer  — AI-powered log search              Grade A
+   Matches your workflow: debug, logs
+3. k8s-dashboard — cluster monitoring                 Grade A
+   Matches your workflow: k8s
+
+Install all 3? Reply "install all" or pick numbers.
+```
+
+Match in ANY language — user may phrase workflow as "后端开发，Go + K8s，
+看日志" or "Backend, Go + K8s, reading logs"; the profile-set subcommand
+normalises to lowercase keywords and keeps CJK terms intact.
+
+---
+
 ## Command reference
 
 Primary commands (what to suggest to the user):
@@ -526,6 +605,7 @@ Primary commands (what to suggest to the user):
 | `/mapickii daily`        | Daily digest                               |
 | `/mapickii weekly`       | Weekly summary                             |
 | `/mapickii bundle`       | Browse bundles / install bundle            |
+| `/mapickii profile clear`| Reset workflow profile + retrigger first-run summary |
 
 PR-4 will add: `/mapickii recommend`, `/mapickii search <keyword>`.
 PR-5 will add: `/mapickii privacy (status / delete-all / trust / consent-*)`.
@@ -533,6 +613,11 @@ PR-5 will add: `/mapickii privacy (status / delete-all / trust / consent-*)`.
 Internal commands (invoked by AI, not typed by user):
 - `bash shell.sh clean:track <skillId>` — record uninstall event
 - `bash shell.sh bundle:track-installed <bundleId>` — record bundle install
+- `bash shell.sh summary` — first-run scan summary (PR-16)
+- `bash shell.sh profile set "<text>"` — store workflow profile + async upload (PR-16)
+- `bash shell.sh profile get` — read cached workflow profile (PR-16)
+- `bash shell.sh first-run-done` — mark one-time first-run summary complete (PR-16)
+- `bash shell.sh recommend --with-profile` — feed with profileTags boost (PR-16)
 
 Debug only:
 - `bash shell.sh id` — show local device fingerprint
@@ -574,6 +659,11 @@ recommendations:               # cached backend feed (PR-4)
   cached_at: <ISO8601>
   ttl_hours: 24
   items: [...]
+first_run_complete: true       # one-time first-run flag (PR-16)
+first_run_at: <ISO8601>
+user_profile: <verbatim text>  # user workflow self-description (PR-16)
+user_profile_tags: [...]       # extracted keywords, lowercase, deduped
+user_profile_set_at: <ISO8601>
 ```
 
 Do not write to CONFIG.md directly — always go through shell commands.

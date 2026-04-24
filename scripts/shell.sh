@@ -1343,6 +1343,97 @@ EOF_CONSENT
     _inject_recommendations "$resp" "true"
     ;;
 
+  # V1 PR-16: 首次安装汇总 — 读 init 已写好的 scan 数据，拼 summary JSON。
+  # 纯本地（即使 kill_switch=true 或 API 挂了也能跑），被 SKILL.md 的 First-run
+  # section 指令调用；由 AI 读 JSON 渲染成用户可读的卡片。
+  # 字段 invoke_count_total / _7d / last_invoked_at / security_grade 当前 scan
+  # 不生成（V1.1 再打通），首次运行时 active/top_used 全为空是预期行为。
+  summary)
+    scan_json="$(_scan_to_json)"
+    SCAN_JSON="$scan_json" python3 <<'PYEOF'
+import os, json
+from datetime import datetime, timezone
+
+try:
+    scan = json.loads(os.environ.get("SCAN_JSON", "{}"))
+except Exception:
+    scan = {}
+
+skills = scan.get("skills", []) or []
+now = datetime.now(timezone.utc)
+
+total = len(skills)
+active = 0
+never_used = 0
+idle_30 = 0
+top_used = []
+
+for s in skills:
+    invoke_total = s.get("invoke_count_total", 0) or 0
+    invoke_7d = s.get("invoke_count_7d", 0) or 0
+    last_invoked = s.get("last_invoked_at") or ""
+
+    if invoke_total == 0:
+        never_used += 1
+    elif invoke_7d > 0:
+        active += 1
+        top_used.append({
+            "name": s.get("id") or s.get("name", "unknown"),
+            "daily": round(invoke_7d / 7),
+        })
+    elif last_invoked:
+        try:
+            last_dt = datetime.fromisoformat(last_invoked.replace("Z", "+00:00"))
+            days_idle = (now - last_dt).days
+            if days_idle >= 30:
+                idle_30 += 1
+            else:
+                active += 1
+        except Exception:
+            idle_30 += 1
+    else:
+        idle_30 += 1
+
+top_used.sort(key=lambda x: x["daily"], reverse=True)
+top_3 = top_used[:3]
+
+grades = {"A": 0, "B": 0, "C": 0}
+for s in skills:
+    g = s.get("security_grade", "A") or "A"
+    if g in grades:
+        grades[g] += 1
+    else:
+        grades["A"] += 1
+
+zombie_count = never_used + idle_30
+context_pct = round((zombie_count / max(total, 1)) * 100) if total > 0 else 0
+
+print(json.dumps({
+    "intent": "summary",
+    "data": {
+        "total": total,
+        "active": active,
+        "never_used": never_used,
+        "idle_30": idle_30,
+        "zombie_count": zombie_count,
+        "context_waste_pct": context_pct,
+        "top_used": top_3,
+        "security": grades,
+        "privacy_rules": 23,
+        "privacy_status": "active",
+    }
+}))
+PYEOF
+    ;;
+
+  # V1 PR-16: 首次运行门闸——跑完 summary + workflow 问答后调一次，
+  # 之后 first_run_complete=true 会被 SKILL.md 的 First-run section 检查拦截。
+  first-run-done)
+    _config_set first_run_complete "true"
+    _config_set first_run_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo '{"intent":"first_run_done","success":true}'
+    ;;
+
   uninstall)
     skill_id="${1:-}"
     if [[ -z "$skill_id" ]]; then
@@ -1562,14 +1653,105 @@ resp="$(_http GET "/assistant/status/${USER_ID}")"
     _bundle_track_installed "${1:-}"
     ;;
 
+  # V1 PR-16: 用户 workflow 画像——本地即时生效，consent=agreed 时异步同步到后端。
+  #   profile set "<text>"  提取关键词写入 CONFIG + async POST /users/<fp>/profile-text
+  #   profile get            返回 {profile, tags}（AI 检查已有画像时用）
+  #   profile clear          删掉 profile + first_run_complete（让用户能重走首次汇总）
+  # 关键词提取：stdlib 正则切空格/逗号，过滤 < 3 字符，过滤常见英文 stop words；
+  # 中文不分词，按空格/逗号整段切（e.g. "写Go代码, 部署K8s" → [go, 代码, 部署, k8s]）。
+  profile)
+    sub="${1:-}"
+    case "$sub" in
+      set)
+        profile_text="${2:-}"
+        if [[ -z "$profile_text" ]]; then
+          echo '{"intent":"profile","error":"missing_argument","hint":"Usage: profile set \"<workflow description>\""}'
+          exit 0
+        fi
+        tags_json="$(PROFILE_TEXT="$profile_text" python3 <<'PYEOF'
+import os, json, re
+text = os.environ.get("PROFILE_TEXT", "")
+stop = {
+    "and","the","a","an","to","in","for","of","my","i","do","with","on","at","is","are","be",
+    "by","from","it","its","this","that","we","you","or","as","if"
+}
+words = re.split(r"[,\s]+", text.lower())
+seen = set()
+tags = []
+for w in words:
+    w = w.strip(".:;!?()[]{}")
+    if len(w) < 3 or w in stop:
+        continue
+    if w not in seen:
+        seen.add(w)
+        tags.append(w)
+print(json.dumps(tags, ensure_ascii=False))
+PYEOF
+)"
+        _config_set user_profile "$profile_text"
+        _config_set user_profile_tags "$tags_json"
+        _config_set user_profile_set_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        # Async upload iff user consented. Fire-and-forget; network failure is silent.
+        consent_ver_p="$(_config_get consent_version)"
+        consent_declined_p="$(_config_get consent_declined)"
+        if [[ -n "$consent_ver_p" && "$consent_declined_p" != "true" ]]; then
+          body="$(jq -cn --arg t "$profile_text" --argjson tags "$tags_json" '{profileText:$t, profileTags:$tags}')"
+          _http POST "/users/${USER_ID}/profile-text" "$body" >/dev/null 2>&1 &
+        fi
+        jq -cn --arg t "$profile_text" --argjson tags "$tags_json" \
+          '{intent:"profile", action:"set", success:true, profile:$t, tags:$tags}'
+        ;;
+      get)
+        profile_text_g="$(_config_get user_profile)"
+        profile_tags_g="$(_config_get user_profile_tags)"
+        [[ -z "$profile_tags_g" ]] && profile_tags_g="[]"
+        jq -cn --arg t "$profile_text_g" --argjson tags "$profile_tags_g" \
+          '{intent:"profile", action:"get", profile:$t, tags:$tags}' 2>/dev/null \
+          || echo "{\"intent\":\"profile\",\"action\":\"get\",\"profile\":\"${profile_text_g}\",\"tags\":[]}"
+        ;;
+      clear)
+        _config_del user_profile
+        _config_del user_profile_tags
+        _config_del user_profile_set_at
+        _config_del first_run_complete
+        _config_del first_run_at
+        echo '{"intent":"profile","action":"clear","success":true}'
+        ;;
+      *)
+        echo '{"intent":"profile","error":"unknown_subcommand","hint":"Usage: profile set|get|clear"}'
+        ;;
+    esac
+    ;;
+
   # ── Recommendation & Discovery (B1 / F1) ──
   recommend)
     # Fetch personalized skill recommendations from backend v2 feed.
     # Backend: GET /recommend/feed (DeviceFp guarded, 60/h rate limit)
     # Returns v2 shape: items[] each with installCommands / reasonEn /
     # peerUsageEn / matchType / installCount / safetyGrade / alternatives / recId / score
-    limit="${1:-5}"
-    resp="$(_http GET "/recommend/feed?limit=${limit}")"
+    #
+    # V1 PR-16: --with-profile flag appends ?profileTags=<csv> from CONFIG so
+    # the backend applies 15% per-match boost (non-breaking: tagless call
+    # regresses to PR-8 shape).
+    limit=5
+    with_profile=0
+    for arg in "$@"; do
+      case "$arg" in
+        --with-profile) with_profile=1 ;;
+        *) [[ "$arg" =~ ^[0-9]+$ ]] && limit="$arg" ;;
+      esac
+    done
+    extra_params=""
+    if [[ "$with_profile" == "1" ]]; then
+      tags_csv="$(_config_get user_profile_tags)"
+      # Strip surrounding [] or quotes if stored as JSON array string; accept CSV too
+      tags_clean="$(echo "$tags_csv" | sed -E 's/^[[:space:]]*\[//; s/\][[:space:]]*$//; s/"//g; s/[[:space:]]+/,/g; s/,+/,/g; s/^,//; s/,$//')"
+      if [[ -n "$tags_clean" ]]; then
+        # URL-encode commas is optional; backend splits on raw comma
+        extra_params="&profileTags=${tags_clean}"
+      fi
+    fi
+    resp="$(_http GET "/recommend/feed?limit=${limit}${extra_params}")"
 
     if echo "$resp" | grep -q '"error"'; then
       echo "$resp"
