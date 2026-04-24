@@ -2,6 +2,20 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.0.4 - 2026-04-24
+
+### Fixed
+
+- **API 端点路径修复**：修复 mapickii 调用后端 API 时多处路径不匹配的问题
+  - `GET /assistant/workflow?userId={fp}` → `GET /assistant/workflow/{fp}`
+  - `GET /assistant/daily?userId={fp}` → `GET /assistant/daily-digest/{fp}`
+  - `GET /assistant/weekly?userId={fp}` → `GET /assistant/weekly/{fp}`
+  - `GET /bundle/recommend` → `GET /bundle/recommend/list`
+  - `POST /bundle/track` → `POST /bundle/seed`
+  - `POST /user/trusted-skills` → `POST /users/trusted-skills`
+  - `DELETE /user/data` → `DELETE /users/data`
+  - `POST /user/consent` → `POST /users/consent`
+
 ## v0.0.3 - 2026-04-24
 
 First V1-reset capable release — merges the long-running `1.0/dev` line
