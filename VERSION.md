@@ -2,6 +2,53 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.0.3 - 2026-04-24
+
+First V1-reset capable release — merges the long-running `1.0/dev` line
+into `main`, bringing the privacy layer, bundle two-step install, the v2
+recommendation feed, persona + share, security scoring and the first-run
+summary card to users installing from `main` or tag.
+
+### Added
+
+- **First-run summary + workflow profile (PR-16)**: the first time a
+  user talks to the agent after install, Mapickii emits a one-shot
+  summary card (privacy / skill counts / zombies / top-used / security
+  grades) and asks one workflow question. The answer seeds
+  `user_profile_tags`, which the backend uses as a 15 % per-match boost
+  on recommend feed results. Completely one-time — after the first run
+  it never fires again. Manual `/mapickii profile clear` replays it.
+- **New shell commands**: `summary`, `first-run-done`, `profile set|get|clear`,
+  `recommend --with-profile`.
+- **Recommendation & search commands** (`/mapickii recommend`,
+  `/mapickii search`) + backend v2 contract (PR-4 / PR-8).
+- **Privacy layer** (`/mapickii privacy status|delete-all|trust|untrust|consent-agree|consent-decline`)
+  with `redact.py` + code-block whitelist + false-positive heuristics
+  (PR-5 / PR-13).
+- **Persona report & share** (`/mapickii report`, `/mapickii share`) with
+  localised production prompt (PR-12).
+- **Security score & reporting** (`/mapickii security <skillId>`,
+  `security:report`) with Grade A/B/C surfaces and alternatives (PR-10 / PR-12).
+- **Bundle two-step install** with scan event reporting to keep the
+  backend skill_records table in sync (PR-2).
+- **kill_switch consumer**: every command gates on `/system/status`
+  with a 5-minute local cache; maintenance mode short-circuits to a
+  localised message (PR-13).
+
+### Changed
+
+- SKILL.md reorganised: Runtime Detection, Red Flags, Intent Routing
+  and Lifecycle Model sections now ship alongside the new First-run
+  summary section.
+- CONFIG.md gains `first_run_complete`, `first_run_at`, `user_profile`,
+  `user_profile_tags`, `user_profile_set_at`.
+
+### Backend (mapick-api) companion
+
+- `POST /users/:userId/profile-text` (DeviceFpGuard, 5/day).
+- `GET /recommend/feed?profileTags=<csv>` — non-destructive 15 % boost.
+- users table gains `profile_text` / `profile_tags` / `profile_set_at`.
+
 ## v0.0.2 - 2026-04-23
 
 ### Fixed
