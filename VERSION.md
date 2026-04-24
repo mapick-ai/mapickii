@@ -2,6 +2,15 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.0.12 - 2026-04-24
+
+### Changed
+
+- **Hardcode API base URL**: `shell.js` and `shell.sh` no longer honor the
+  `MAPICKII_API_BASE` environment variable. The base is pinned to
+  `https://api.mapick.ai/api/v1`. `SKILL.md` no longer advertises
+  `primaryEnv`, and the `--help` output drops the env-var line.
+
 ## v0.0.11 - 2026-04-24
 
 ### Fixed

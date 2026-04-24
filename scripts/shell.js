@@ -675,9 +675,7 @@ Commands:
   privacy consent-agree [version]  Record consent
   privacy consent-decline      Decline consent (local-only mode)
   event:track <userId> <action> [skillId]  Record event
-  id                      Device fingerprint (debug)
-
-Env: MAPICKII_API_BASE (default: https://api.mapick.ai/api/v1)`);
+  id                      Device fingerprint (debug)`);
       result = { error: "usage" };
       break;
 
