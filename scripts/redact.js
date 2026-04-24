@@ -63,7 +63,7 @@ const RULES = [
 const CODE_BLOCK_RE = /```[\s\S]*?```|`[^`\n]+`/g;
 
 const META_TOPIC_PATTERNS = {
-  email: /(regex|regexp|正则|正则表达式|format|格式|validation|验证|检测|pattern)/i,
+  email: /\b(regex|regexp|正则|正则表达式|format|格式|validation|验证|检测|pattern)\b/i,
   api_key: /(how\s+to|如何).*(key|密钥|token|format|格式)/i,
   credit_card: /(card\s*format|卡号格式|validation|luhn|mod\.10|check\s*digit)/i,
   phone: /(phone\s*format|手机号格式|国际区号|e\.164)/i,
