@@ -314,7 +314,7 @@ async function main() {
         result = await httpCall('GET', `/bundle/${ARGS[0]}`);
         result.intent = 'bundle:detail';
       } else {
-        result = await httpCall('GET', '/bundle/list');
+        result = await httpCall('GET', '/bundle');
         result.intent = 'bundle';
       }
       break;

@@ -515,7 +515,7 @@ except:
 
 _welcome_json() {
   # V1 first-install response. Lean JSON — no ASCII logo, no actions prompt,
-  # no /recommend/feed call (lazy-loaded via 'recommend' command in PR-4).
+  # no /recommendations/feed call (lazy-loaded via 'recommend' command in PR-4).
   # AI is responsible for rendering in the user's conversation language.
   local device_fp="$(_config_get device_fp)"
   [[ -z "$device_fp" ]] && device_fp="$(_device_fp)"
@@ -809,14 +809,14 @@ _report_scan_events() {
   echo "$added" | jq -r '.[]?' 2>/dev/null | while IFS= read -r skill_id; do
     [[ -z "$skill_id" ]] && continue
     local body="{\"action\":\"skill_install\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"source\":\"scan\"}}"
-    _http POST /event/track "$body" >/dev/null 2>&1 || true
+    _http POST /events/track "$body" >/dev/null 2>&1 || true
   done
 
   # Report skill_uninstall for each removed skill (detected local deletion)
   echo "$removed" | jq -r '.[]?' 2>/dev/null | while IFS= read -r skill_id; do
     [[ -z "$skill_id" ]] && continue
     local body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"detected_removal\"}}"
-    _http POST /event/track "$body" >/dev/null 2>&1 || true
+    _http POST /events/track "$body" >/dev/null 2>&1 || true
   done
 }
 
@@ -1207,7 +1207,7 @@ _bundle_track_installed() {
 
   local body="{\"action\":\"bundle_installed\",\"bundleId\":\"${bundle_id}\",\"userId\":\"${USER_ID}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
   local track_resp
-  track_resp="$(_http POST /event/track "$body")"
+  track_resp="$(_http POST /events/track "$body")"
   echo "{\"intent\":\"bundle:track-installed\",\"bundleId\":\"${bundle_id}\",\"tracked\":true,\"backend\":${track_resp}}"
 }
 
@@ -1471,7 +1471,7 @@ PYEOF
     paths_raw="$(_scan_find_paths "$skill_id")"
     if [[ -z "$paths_raw" ]]; then
       # Not found locally, just run clean:track
-      resp="$(_http POST /event/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
+      resp="$(_http POST /events/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
       echo "{\"intent\":\"uninstall:no-local\",\"skillId\":\"${skill_id}\",\"message\":\"Skill not found locally, uninstall recorded\",\"track\":${resp}}"
       exit 0
     fi
@@ -1517,7 +1517,7 @@ PYEOF
     done
 
     # Record uninstall event
-    track_resp="$(_http POST /event/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
+    track_resp="$(_http POST /events/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
     # Refresh scan so scan.skills reflects deletion
     _do_scan
     echo "{\"intent\":\"uninstall\",\"skillId\":\"${skill_id}\",\"deleted\":[${deleted_json}],\"track\":${track_resp}}"
@@ -1546,7 +1546,7 @@ clean)
         exit 0
       fi
     fi
-    resp="$(_http GET "/user/${USER_ID}/zombies")"
+    resp="$(_http GET "/users/${USER_ID}/zombies")"
     _cache_write "zombies" "$resp"
     _inject_recommendations "$resp"
     ;;
@@ -1586,7 +1586,7 @@ weekly)
 
     # V1 C6: reason is always "zombie_cleanup" (no interactive reason prompt).
     body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"zombie_cleanup\"}}"
-    track_resp="$(_http POST /event/track "$body")"
+    track_resp="$(_http POST /events/track "$body")"
 
     # Protected skill: track only, don't delete
     if _is_protected "$skill_id"; then
@@ -1726,7 +1726,7 @@ PYEOF
   # ── Recommendation & Discovery (B1 / F1) ──
   recommend)
     # Fetch personalized skill recommendations from backend v2 feed.
-    # Backend: GET /recommend/feed (DeviceFp guarded, 60/h rate limit)
+    # Backend: GET /recommendations/feed (DeviceFp guarded, 60/h rate limit)
     # Returns v2 shape: items[] each with installCommands / reasonEn /
     # peerUsageEn / matchType / installCount / safetyGrade / alternatives / recId / score
     #
@@ -1751,7 +1751,7 @@ PYEOF
         extra_params="&profileTags=${tags_clean}"
       fi
     fi
-    resp="$(_http GET "/recommend/feed?limit=${limit}${extra_params}")"
+    resp="$(_http GET "/recommendations/feed?limit=${limit}${extra_params}")"
 
     if echo "$resp" | grep -q '"error"'; then
       echo "$resp"
@@ -1773,7 +1773,7 @@ PYEOF
 
   search)
     # Keyword search against ClawHub via backend.
-    # Backend: GET /skill/live-search (DeviceFp guarded, 30/min rate limit)
+    # Backend: GET /skills/live-search (DeviceFp guarded, 30/min rate limit)
     query="${1:-}"
     if [[ -z "$query" ]]; then
       echo '{"intent":"search","error":"missing_argument","hint":"Usage: search <keyword>"}'
@@ -1783,7 +1783,7 @@ PYEOF
 
     # URL-encode the query (Python stdlib handles CJK / punctuation cleanly)
     encoded_query="$(QUERY="$query" python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["QUERY"], safe=""))')"
-    resp="$(_http GET "/skill/live-search?query=${encoded_query}&limit=${search_limit}")"
+    resp="$(_http GET "/skills/live-search?query=${encoded_query}&limit=${search_limit}")"
 
     if echo "$resp" | grep -q '"error"'; then
       echo "$resp"
@@ -1812,7 +1812,7 @@ PYEOF
     fi
 
     body="{\"userId\":\"${USER_ID}\",\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
-    _http POST /recommend/track "$body" >/dev/null 2>&1 || true
+    _http POST /recommendations/track "$body" >/dev/null 2>&1 || true
     echo "{\"intent\":\"recommend:track\",\"tracked\":true,\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
     ;;
 
@@ -1892,7 +1892,7 @@ print(json.dumps({
       echo '{"intent":"security","error":"missing_argument","hint":"Usage: security <skillId>"}'
       exit 0
     fi
-    resp="$(_http GET "/skill/${skill_id}/security")"
+    resp="$(_http GET "/security/${skill_id}")"
     echo "$resp" | jq -c '. + {intent:"security"}'
     ;;
 
@@ -1918,7 +1918,7 @@ print(json.dumps({
     "contactMethod": "none",
 }))
 ')"
-    resp="$(_http POST "/skill/${skill_id}/report" "$body")"
+    resp="$(_http POST "/security/report" "$body")"
     echo "$resp" | jq -c '. + {intent:"security:report", skillId:"'"$skill_id"'"}'
     ;;
 
@@ -1958,7 +1958,7 @@ PYEOF
         skill_id="${2:-}"
         [[ -z "$skill_id" ]] && { echo '{"intent":"privacy:trust","error":"missing_argument","hint":"Usage: privacy trust <skillId>"}'; exit 0; }
         # Remote + local double-write (local is source of truth in V1)
-        _http POST /user/trusted-skills "{\"skillId\":\"${skill_id}\",\"permission\":\"pass_through\"}" >/dev/null 2>&1 || true
+        _http POST /users/trusted-skills "{\"skillId\":\"${skill_id}\",\"permission\":\"pass_through\"}" >/dev/null 2>&1 || true
         current="$(_config_get trusted_skills || echo '[]')"
         updated="$(SKILL_ID="$skill_id" LIST="$current" python3 -c 'import os, json; a = json.loads(os.environ.get("LIST","[]") or "[]"); s = os.environ["SKILL_ID"]; a = list(dict.fromkeys(a + [s])); print(json.dumps(a))')"
         _config_set trusted_skills "$updated"
@@ -1979,7 +1979,7 @@ PYEOF
           exit 0
         fi
         # Call backend GDPR erasure first
-        resp="$(_http DELETE /user/data "")"
+        resp="$(_http DELETE /users/data "")"
         # Clear local state — keep device_fp so subsequent sessions are
         # identical to a fresh install (not a weird "half-wiped" state)
         dfp="$(_config_get device_fp)"
@@ -1998,7 +1998,7 @@ EOF_CFG
       consent-agree)
         version="${2:-1.0}"
         now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        _http POST /user/consent "{\"consentVersion\":\"${version}\",\"agreedAt\":\"${now_utc}\"}" >/dev/null 2>&1 || true
+        _http POST /users/consent "{\"consentVersion\":\"${version}\",\"agreedAt\":\"${now_utc}\"}" >/dev/null 2>&1 || true
         _config_set consent_version "$version"
         _config_set consent_agreed_at "$now_utc"
         _config_del consent_declined 2>/dev/null || true
