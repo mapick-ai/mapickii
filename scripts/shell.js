@@ -15,7 +15,7 @@ const CONFIG_DIR = path.dirname(__dirname);
 const CONFIG_FILE = path.join(CONFIG_DIR, 'CONFIG.md');
 const TRASH_DIR = path.join(CONFIG_DIR, 'trash');
 const REDACTJS_PATH = path.join(CONFIG_DIR, 'redact.js');
-const API_BASE = process.env.MAPICKII_API_BASE || 'https://api.mapick.ai/v1';
+const API_BASE = process.env.MAPICKII_API_BASE || 'https://api.mapick.ai';
 const SKILLS_BASE = process.env.SKILLS_BASE || path.join(os.homedir(), '.openclaw', 'skills');
 const CACHE_DIR = path.join(os.homedir(), '.mapickii', 'cache');
 
@@ -82,10 +82,13 @@ function writeCache(key, data, ttlHours = 24) {
 }
 
 async function httpCall(method, endpoint, body = null) {
-  const url = new URL(endpoint, API_BASE);
+  const base = API_BASE.replace(/\/$/, '') + '/';
+  const url = new URL(endpoint.replace(/^\//, ''), base);
+  const isHttps = url.protocol === 'https:';
+  const httpModule = isHttps ? https : require('http');
   const options = {
     hostname: url.hostname,
-    port: url.port || 443,
+    port: url.port || (isHttps ? 443 : 80),
     path: url.pathname + url.search,
     method,
     headers: {
@@ -95,7 +98,7 @@ async function httpCall(method, endpoint, body = null) {
   };
   
   return new Promise((resolve, reject) => {
-    const req = https.request(options, res => {
+    const req = httpModule.request(options, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -516,7 +519,7 @@ Commands:
   event:track <userId> <action> [skillId]  Record event
   id                      Device fingerprint (debug)
 
-Env: MAPICKII_API_BASE (default: https://api.mapick.ai/v1)`);
+Env: MAPICKII_API_BASE (default: https://api.mapick.ai)`);
       result = { error: 'usage' };
       break;
 

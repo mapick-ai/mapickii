@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ── Constants ─────────────────────────────────────────
-API_BASE="${MAPICKII_API_BASE:-https://api.mapick.ai/v1}"
+API_BASE="${MAPICKII_API_BASE:-https://api.mapick.ai}"
 
 # Mapickii install path (parent of scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -2072,7 +2072,7 @@ Lifecycle:
   weekly                    Weekly report
 
 Environment variables:
-  MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai/v1)
+  MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai)
 USAGE
     echo '{"error":"usage","message":"see stderr"}'
     ;;
