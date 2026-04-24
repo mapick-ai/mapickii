@@ -91,19 +91,19 @@ clawhub install mapick
 ### One-line install (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.11/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.12/install.sh | bash
 ```
 
 Or with `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.11/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v0.0.12/install.sh | bash
 ```
 
 Pin a specific version:
 
 ```bash
-MAPICKII_VERSION=v0.0.11 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
+MAPICKII_VERSION=v0.0.12 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
 ```
 
 Then just talk to your agent in any language:
