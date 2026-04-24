@@ -202,7 +202,7 @@ async function main() {
       if (cached && ARGS.length === 0) {
         result = { intent: 'recommend', items: cached.items, cached: true };
       } else {
-        const resp = await httpCall('GET', `/recommend/feed?limit=${limit}`);
+        const resp = await httpCall('GET', `/recommendations/feed?limit=${limit}`);
         if (resp.error) result = resp;
         else {
           result = { intent: 'recommend', items: resp.items || resp.recommendations || [], device_fp: fp };
@@ -221,7 +221,7 @@ async function main() {
         result = { error: 'invalid_action', valid: VALID_TRACK_ACTIONS };
         break;
       }
-      result = await httpCall('POST', '/recommend/track', { recId, skillId, action, userId: fp });
+      result = await httpCall('POST', '/recommendations/track', { recId, skillId, action, userId: fp });
       result.intent = 'recommend:track';
       break;
 
