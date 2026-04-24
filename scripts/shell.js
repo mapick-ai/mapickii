@@ -285,30 +285,30 @@ async function main() {
       break;
 
     case 'workflow':
-      result = await httpCall('GET', `/assistant/workflow?userId=${fp}`);
+      result = await httpCall('GET', `/assistant/workflow/${fp}`);
       result.intent = 'workflow';
       break;
 
     case 'daily':
-      result = await httpCall('GET', `/assistant/daily?userId=${fp}`);
+      result = await httpCall('GET', `/assistant/daily-digest/${fp}`);
       result.intent = 'daily';
       break;
 
     case 'weekly':
-      result = await httpCall('GET', `/assistant/weekly?userId=${fp}`);
+      result = await httpCall('GET', `/assistant/weekly/${fp}`);
       result.intent = 'weekly';
       break;
 
     case 'bundle':
       if (ARGS[0] === 'recommend') {
-        result = await httpCall('GET', '/bundle/recommend');
+        result = await httpCall('GET', '/bundle/recommend/list');
         result.intent = 'bundle:recommend';
       } else if (ARGS[0] === 'install' && ARGS[1]) {
         result = await httpCall('GET', `/bundle/${ARGS[1]}/install`);
         result.intent = 'bundle:install';
         result.bundleId = ARGS[1];
       } else if (ARGS[0] === 'track-installed' && ARGS[1]) {
-        result = await httpCall('POST', '/bundle/track', { bundleId: ARGS[1], userId: fp });
+        result = await httpCall('POST', '/bundle/seed', { bundleId: ARGS[1], userId: fp });
         result.intent = 'bundle:track-installed';
       } else if (ARGS[0]) {
         result = await httpCall('GET', `/bundle/${ARGS[0]}`);
@@ -377,7 +377,7 @@ async function main() {
             result = { error: 'missing_argument', hint: 'Usage: privacy trust <skillId>' };
             break;
           }
-          result = await httpCall('POST', '/user/trusted-skills', { userId: fp, skillId: ARGS[1], permission: 'unredacted' });
+          result = await httpCall('POST', '/users/trusted-skills', { userId: fp, skillId: ARGS[1], permission: 'unredacted' });
           result.intent = 'privacy:trust';
           const trusted = config.trusted_skills ? config.trusted_skills.split(',') : [];
           trusted.push(ARGS[1]);
@@ -399,7 +399,7 @@ async function main() {
             result = { error: 'confirm_required', destructive_scope: 'local CONFIG.md + cache + trash + backend data (events, skill records, consents, trusted skills, recommendation feedback, share reports)' };
             break;
           }
-          const deleteResp = await httpCall('DELETE', '/user/data');
+          const deleteResp = await httpCall('DELETE', '/users/data');
           fs.rmSync(CONFIG_FILE, { force: true });
           fs.rmSync(CACHE_DIR, { recursive: true, force: true });
           fs.rmSync(TRASH_DIR, { recursive: true, force: true });
@@ -411,7 +411,7 @@ async function main() {
         case 'consent-agree':
           const version = ARGS[1] || '1.0';
           const now = isoNow();
-          await httpCall('POST', '/user/consent', { consentVersion: version, agreedAt: now });
+          await httpCall('POST', '/users/consent', { consentVersion: version, agreedAt: now });
           writeConfig('consent_version', version);
           writeConfig('consent_agreed_at', now);
           deleteConfig('consent_declined');
