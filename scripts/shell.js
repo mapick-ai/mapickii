@@ -9,10 +9,12 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 const os = require('os');
+const { execSync } = require('child_process');
 
 const CONFIG_DIR = path.dirname(__dirname);
 const CONFIG_FILE = path.join(CONFIG_DIR, 'CONFIG.md');
 const TRASH_DIR = path.join(CONFIG_DIR, 'trash');
+const REDACTJS_PATH = path.join(CONFIG_DIR, 'redact.js');
 const API_BASE = process.env.MAPICKII_API_BASE || 'https://api.mapick.ai/v1';
 const SKILLS_BASE = process.env.SKILLS_BASE || path.join(os.homedir(), '.openclaw', 'skills');
 const CACHE_DIR = path.join(os.homedir(), '.mapickii', 'cache');
@@ -150,6 +152,23 @@ function isProtected(skillId) {
 
 function isoNow() {
   return new Date().toISOString();
+}
+
+function redact(text) {
+  if (!text) return text;
+  const config = readConfig();
+  if (config.redact_disabled === 'true') return text;
+  if (!fs.existsSync(REDACTJS_PATH)) return text;
+  try {
+    const result = execSync(`node "${REDACTJS_PATH}"`, {
+      input: text,
+      encoding: 'utf8',
+      timeout: 5000
+    });
+    return result.trim();
+  } catch {
+    return text;
+  }
 }
 
 const COMMAND = process.argv[2] || 'status';
@@ -334,7 +353,7 @@ async function main() {
         result = { error: 'file_not_found', file: htmlFile };
         break;
       }
-      const htmlContent = fs.readFileSync(htmlFile, 'utf8');
+      const htmlContent = redact(fs.readFileSync(htmlFile, 'utf8'));
       result = await httpCall('POST', '/share/upload', { reportId, html: htmlContent, locale: ARGS[2] || 'en' });
       result.intent = 'share';
       break;
