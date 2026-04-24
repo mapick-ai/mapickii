@@ -2,6 +2,25 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.0.11 - 2026-04-24
+
+### Fixed
+
+- **Restore `/api/v1` prefix in default `API_BASE`**: v0.0.10 removed the
+  prefix from both `shell.js` and `shell.sh`, causing every remote call
+  to return 404 because the backend sets `setGlobalPrefix("api/v1")` in
+  `main.ts`. All 20 endpoints (search, recommend, bundle, assistant,
+  users, events, report, share, security) are now reachable again.
+  - `shell.js`: `MAPICKII_API_BASE` default → `https://api.mapick.ai/api/v1`
+  - `shell.sh`: `MAPICKII_API_BASE` default → `https://api.mapick.ai/api/v1`
+
+### Notes
+
+- Users who explicitly set `MAPICKII_API_BASE=https://api.mapick.ai`
+  (without a prefix) must update it to include `/api/v1`, or unset it so
+  the new default applies.
+- Clear stale 404 recommend cache after upgrade: `rm -rf ~/.mapickii/cache`.
+
 ## v0.0.4 - 2026-04-24
 
 ### Fixed
