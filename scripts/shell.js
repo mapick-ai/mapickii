@@ -247,7 +247,7 @@ async function main() {
       break;
 
     case 'clean':
-      const cleanResp = await httpCall('GET', `/user/${fp}/zombies`);
+      const cleanResp = await httpCall('GET', `/users/${fp}/zombies`);
       result = { intent: 'clean', zombies: cleanResp.zombies || cleanResp || [] };
       break;
 
@@ -256,7 +256,7 @@ async function main() {
         result = { error: 'missing_argument', hint: 'Usage: clean:track <skillId>' };
         break;
       }
-      result = await httpCall('POST', '/event/track', { userId: fp, skillId: ARGS[0], action: 'skill_uninstall', metadata: { reason: 'zombie_cleanup' } });
+      result = await httpCall('POST', '/events/track', { userId: fp, skillId: ARGS[0], action: 'skill_uninstall', metadata: { reason: 'zombie_cleanup' } });
       result.intent = 'clean:track';
       break;
 
@@ -320,7 +320,7 @@ async function main() {
       break;
 
     case 'report':
-      const reportResp = await httpCall('GET', `/report/persona?userId=${fp}`);
+      const reportResp = await httpCall('GET', `/report/persona`);
       result = { intent: 'report', ...reportResp };
       break;
 
@@ -454,7 +454,7 @@ async function main() {
         result = { error: 'invalid_action', valid: VALID_EVENT_ACTIONS };
         break;
       }
-      result = await httpCall('POST', '/event/track', { userId, action: actionType, skillId: metaSkillId || null });
+      result = await httpCall('POST', '/events/track', { userId, action: actionType, skillId: metaSkillId || null });
       result.intent = 'event:track';
       break;
 
