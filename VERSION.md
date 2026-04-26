@@ -2,6 +2,12 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.0.13 - 2026-04-27
+
+### Changed
+
+- Align node shell with V2.0 endpoints; normalize redaction placeholders
+
 ## v0.0.12 - 2026-04-24
 
 ### Changed
