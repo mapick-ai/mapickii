@@ -95,7 +95,10 @@ function applyRules(text, skipFamilies = []) {
   for (const [pattern, replacement] of RULES) {
     const label = replacement.replace(/^\$1=/, '[REDACTED]');
     if (skipReplacements.has(label)) continue;
-    result = result.replace(pattern, replacement);
+    const publicReplacement = /^\[[A-Z0-9_]+\]$/.test(replacement)
+      ? '[REDACTED]'
+      : replacement;
+    result = result.replace(pattern, publicReplacement);
   }
   return result;
 }

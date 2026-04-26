@@ -118,7 +118,12 @@ def _apply_rules(chunk: str, skip_families: set) -> str:
         # check if any skip label occurs in the literal replacement string
         if any(sk in replacement for sk in skip_replacements):
             continue
-        chunk = pattern.sub(replacement, chunk)
+        public_replacement = (
+            "[REDACTED]"
+            if replacement.startswith("[") and replacement.endswith("]")
+            else replacement
+        )
+        chunk = pattern.sub(public_replacement, chunk)
     return chunk
 
 
