@@ -15,7 +15,7 @@ const CONFIG_DIR = path.dirname(__dirname);
 const CONFIG_FILE = path.join(CONFIG_DIR, "CONFIG.md");
 const TRASH_DIR = path.join(CONFIG_DIR, "trash");
 const REDACTJS_PATH = path.join(CONFIG_DIR, "redact.js");
-const API_BASE = "https://api.mapick.ai/api/v1";
+const API_BASE = process.env.MAPICKII_API_BASE || "https://api.mapick.ai/api/v1";
 const SKILLS_BASE =
   process.env.SKILLS_BASE || path.join(os.homedir(), ".openclaw", "skills");
 const CACHE_DIR = path.join(os.homedir(), ".mapickii", "cache");
@@ -40,6 +40,20 @@ const VALID_EVENT_ACTIONS = [
   "sequence_pattern",
 ];
 const PROTECTED_SKILLS = ["mapickii", "mapick", "tasa"];
+const REMOTE_COMMANDS = new Set([
+  "recommend",
+  "recommend:track",
+  "search",
+  "workflow",
+  "daily",
+  "weekly",
+  "report",
+  "security",
+  "security:report",
+  "clean",
+  "clean:track",
+  "share",
+]);
 
 function deviceFp() {
   const config = readConfig();
@@ -196,6 +210,36 @@ function isoNow() {
   return new Date().toISOString();
 }
 
+function isConsentDeclined(config) {
+  return config.consent_declined === "true";
+}
+
+function hasConsent(config) {
+  return Boolean(config.consent_version);
+}
+
+function isRemoteCommand(command, args) {
+  if (REMOTE_COMMANDS.has(command)) return true;
+  if (command === "bundle") return true;
+  if (command === "privacy" && ["trust"].includes(args[0])) return true;
+  return false;
+}
+
+function remoteAccessError(config) {
+  if (isConsentDeclined(config)) {
+    return {
+      error: "disabled_in_local_mode",
+      mode: "local_only",
+      hint: "This command requires consent. Run: privacy consent-agree 1.0",
+    };
+  }
+
+  return {
+    error: "consent_required",
+    hint: "This command requires consent. Run: privacy consent-agree 1.0",
+  };
+}
+
 function redact(text) {
   if (!text) return text;
   const config = readConfig();
@@ -221,6 +265,11 @@ async function main() {
   const fp = deviceFp();
   let result;
 
+  if (isRemoteCommand(COMMAND, ARGS) && (!hasConsent(config) || isConsentDeclined(config))) {
+    console.log(JSON.stringify(remoteAccessError(config)));
+    return;
+  }
+
   switch (COMMAND) {
     case "init":
     case "status":
@@ -240,7 +289,6 @@ async function main() {
         result = {
           status: "first_install",
           data: {
-            deviceFingerprint: fp,
             skillsCount: skills.length,
             skillNames: skills.slice(0, 5).map((s) => s.name),
           },
@@ -249,7 +297,6 @@ async function main() {
       } else {
         result = {
           intent: "status",
-          device_fp: fp,
           skills,
           activation_rate:
             skills.filter((s) => s.enabled).length > 0 ? "100%" : "0%",
@@ -280,7 +327,6 @@ async function main() {
           result = {
             intent: "recommend",
             items: resp.items || resp.recommendations || [],
-            device_fp: fp,
           };
           writeCache(cacheKey, { items: result.items });
         }
@@ -436,6 +482,15 @@ async function main() {
     case "report":
       const reportResp = await httpCall("GET", `/report/persona`);
       result = { intent: "report", ...reportResp };
+      if (
+        result.status === "brewing" ||
+        result.primaryPersona?.id === "fresh_meat"
+      ) {
+        result.status = result.status || "brewing";
+        result.messageEn =
+          result.messageEn ||
+          ":lock: Your persona is brewing. Use Mapick for a few more skill actions before generating a shareable report.";
+      }
       break;
 
     case "share":
@@ -468,7 +523,7 @@ async function main() {
         };
         break;
       }
-      result = await httpCall("GET", `/security/${ARGS[0]}`);
+      result = await httpCall("GET", `/skill/${ARGS[0]}/security`);
       result.intent = "security";
       break;
 
@@ -480,11 +535,9 @@ async function main() {
         };
         break;
       }
-      result = await httpCall("POST", "/security/report", {
-        skillId: ARGS[0],
+      result = await httpCall("POST", `/skill/${ARGS[0]}/report`, {
         reason: ARGS[1],
-        evidence: ARGS[2],
-        userId: fp,
+        evidenceEn: ARGS[2],
       });
       result.intent = "security:report";
       break;
@@ -495,10 +548,15 @@ async function main() {
         case "status":
           result = {
             intent: "privacy:status",
-            device_fp: fp,
             consent_version: config.consent_version || null,
             consent_agreed_at: config.consent_agreed_at || null,
             consent_declined: config.consent_declined === "true",
+            remote_access:
+              config.consent_declined === "true"
+                ? "local_only"
+                : config.consent_version
+                  ? "enabled"
+                  : "consent_required",
             trusted_skills: config.trusted_skills
               ? config.trusted_skills.split(",")
               : [],
@@ -639,7 +697,7 @@ async function main() {
       break;
 
     case "id":
-      result = { device_fp: fp };
+      result = { intent: "id", debug_identifier: fp };
       break;
 
     case "help":
@@ -675,7 +733,7 @@ Commands:
   privacy consent-agree [version]  Record consent
   privacy consent-decline      Decline consent (local-only mode)
   event:track <userId> <action> [skillId]  Record event
-  id                      Device fingerprint (debug)`);
+  id                      Debug identifier (debug)`);
       result = { error: "usage" };
       break;
 
