@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ── Constants ─────────────────────────────────────────
-API_BASE="${MAPICKII_API_BASE:-https://api.mapick.ai/v1}"
+API_BASE="${MAPICKII_API_BASE:-https://api.mapick.ai/api/v1}"
 
 # Mapickii install path (parent of scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1726,7 +1726,7 @@ PYEOF
   # ── Recommendation & Discovery (B1 / F1) ──
   recommend)
     # Fetch personalized skill recommendations from backend v2 feed.
-    # Backend: GET /recommend/feed (DeviceFp guarded, 60/h rate limit)
+    # Backend: GET /recommendations/feed (DeviceFp guarded, 60/h rate limit)
     # Returns v2 shape: items[] each with installCommands / reasonEn /
     # peerUsageEn / matchType / installCount / safetyGrade / alternatives / recId / score
     #
@@ -1751,29 +1751,29 @@ PYEOF
         extra_params="&profileTags=${tags_clean}"
       fi
     fi
-    resp="$(_http GET "/recommend/feed?limit=${limit}${extra_params}")"
+    resp="$(_http GET "/recommendations/feed?limit=${limit}${extra_params}")"
 
     if echo "$resp" | grep -q '"error"'; then
       echo "$resp"
       exit 0
     fi
 
-    items_count="$(echo "$resp" | jq '.items // [] | length' 2>/dev/null || echo 0)"
+    items_count="$(echo "$resp" | jq '(.items // .recommendations // []) | length' 2>/dev/null || echo 0)"
     if [[ "$items_count" -eq 0 ]]; then
       echo "{\"intent\":\"recommend\",\"items\":[],\"emptyReason\":\"no_recommendations_yet\"}"
       exit 0
     fi
 
     # Cache items for 24h so follow-up queries don't burn rate limit
-    items="$(echo "$resp" | jq -c '.items' 2>/dev/null || echo '[]')"
+    items="$(echo "$resp" | jq -c '(.items // .recommendations // [])' 2>/dev/null || echo '[]')"
     _save_recommendations "$items" >/dev/null 2>&1 || true
 
-    echo "$resp" | jq -c '{intent: "recommend", items: .items, cachedFor: "24h"}'
+    echo "$resp" | jq -c '{intent: "recommend", items: (.items // .recommendations // []), cachedFor: "24h"}'
     ;;
 
   search)
     # Keyword search against ClawHub via backend.
-    # Backend: GET /skill/live-search (DeviceFp guarded, 30/min rate limit)
+    # Backend: GET /skills/live-search (DeviceFp guarded, 30/min rate limit)
     query="${1:-}"
     if [[ -z "$query" ]]; then
       echo '{"intent":"search","error":"missing_argument","hint":"Usage: search <keyword>"}'
@@ -1783,7 +1783,7 @@ PYEOF
 
     # URL-encode the query (Python stdlib handles CJK / punctuation cleanly)
     encoded_query="$(QUERY="$query" python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["QUERY"], safe=""))')"
-    resp="$(_http GET "/skill/live-search?query=${encoded_query}&limit=${search_limit}")"
+    resp="$(_http GET "/skills/live-search?query=${encoded_query}&limit=${search_limit}")"
 
     if echo "$resp" | grep -q '"error"'; then
       echo "$resp"
@@ -1812,7 +1812,7 @@ PYEOF
     fi
 
     body="{\"userId\":\"${USER_ID}\",\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
-    _http POST /recommend/track "$body" >/dev/null 2>&1 || true
+    _http POST /recommendations/track "$body" >/dev/null 2>&1 || true
     echo "{\"intent\":\"recommend:track\",\"tracked\":true,\"recId\":\"${rec_id}\",\"skillId\":\"${skill_id}\",\"action\":\"${track_action}\"}"
     ;;
 
@@ -1829,11 +1829,12 @@ PYEOF
       exit 0
     fi
 
-    # Guard fresh_meat bucket: if user has <7 days of data, backend returns
-    # primaryPersona.id='fresh_meat'. AI shows "use longer then come back".
+    # Guard low-data bucket: backend returns status='brewing' or
+    # primaryPersona.id='fresh_meat'. AI shows brewing card and does not share.
+    report_status="$(echo "$resp" | jq -r '.status // empty' 2>/dev/null || echo '')"
     primary_id="$(echo "$resp" | jq -r '.primaryPersona.id // empty' 2>/dev/null || echo '')"
-    if [[ "$primary_id" == "fresh_meat" ]]; then
-      echo "$resp" | jq -c '. + {intent:"report", status:"not_ready", messageEn:"Use Mapick for a week, then come back for your persona report."}'
+    if [[ "$report_status" == "brewing" || "$primary_id" == "fresh_meat" ]]; then
+      echo "$resp" | jq -c '. + {intent:"report", status:(.status // "brewing"), messageEn:(.messageEn // ":lock: Your persona is brewing. Use Mapick for a few more skill actions before generating a shareable report.")}'
       exit 0
     fi
 
@@ -2039,7 +2040,7 @@ Mapickii - Mapick Smart Assistant (V1)
 Usage: bash shell.sh <command> [args...]
 
 Identity (debug only):
-  id                        View local device fingerprint
+  id                        Debug identifier
 
 Bundle recommendations (M3):
   bundle                    List bundles
@@ -2072,7 +2073,7 @@ Lifecycle:
   weekly                    Weekly report
 
 Environment variables:
-  MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai/v1)
+  MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai/api/v1)
 USAGE
     echo '{"error":"usage","message":"see stderr"}'
     ;;

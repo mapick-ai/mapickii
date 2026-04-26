@@ -30,7 +30,7 @@ speaks. Only treat this as the `recommend` intent when the user asks about
 **skills / tools / what to install** (not general-purpose "recommend a book").
 
 Shell command: `bash shell.sh recommend [limit]`
-Backend: `GET /recommend/feed?limit=5` (DeviceFp guarded, 60/h rate limit)
+Backend: `GET /recommendations/feed?limit=5` (DeviceFp guarded, 60/h rate limit)
 
 ### Intent: search
 
@@ -213,8 +213,9 @@ Command: `/mapickii report`  (alias: `/mapickii persona`)
 ### Flow
 
 1. Call `report` — returns primaryPersona + shadowPersona + dataProfile (English).
-2. If `primaryPersona.id === "fresh_meat"` → tell the user to use Mapick for at least
-   7 days before coming back. Do NOT generate HTML.
+2. If `status === "brewing"` or `primaryPersona.id === "fresh_meat"` → render
+   `:lock: Your persona is brewing...`, briefly say more usage data is needed,
+   and do NOT generate or upload HTML.
 3. Otherwise, render a localized persona report to the user using `dataProfile`.
    Keep it short and witty — one screen. Use the user's `locale`.
 4. Generate a **self-contained HTML share page** per the Production Prompt
@@ -620,7 +621,7 @@ Internal commands (invoked by AI, not typed by user):
 - `bash shell.sh recommend --with-profile` — feed with profileTags boost (PR-16)
 
 Debug only:
-- `bash shell.sh id` — show local device fingerprint
+- `bash shell.sh id` — debug identifier
 
 ---
 
