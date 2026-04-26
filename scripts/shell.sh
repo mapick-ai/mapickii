@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ── Constants ─────────────────────────────────────────
-API_BASE="https://api.mapick.ai/api/v1"
+API_BASE="${MAPICKII_API_BASE:-https://api.mapick.ai/api/v1}"
 
 # Mapickii install path (parent of scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -515,7 +515,7 @@ except:
 
 _welcome_json() {
   # V1 first-install response. Lean JSON — no ASCII logo, no actions prompt,
-  # no /recommendations/feed call (lazy-loaded via 'recommend' command in PR-4).
+  # no /recommend/feed call (lazy-loaded via 'recommend' command in PR-4).
   # AI is responsible for rendering in the user's conversation language.
   local device_fp="$(_config_get device_fp)"
   [[ -z "$device_fp" ]] && device_fp="$(_device_fp)"
@@ -809,14 +809,14 @@ _report_scan_events() {
   echo "$added" | jq -r '.[]?' 2>/dev/null | while IFS= read -r skill_id; do
     [[ -z "$skill_id" ]] && continue
     local body="{\"action\":\"skill_install\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"source\":\"scan\"}}"
-    _http POST /events/track "$body" >/dev/null 2>&1 || true
+    _http POST /event/track "$body" >/dev/null 2>&1 || true
   done
 
   # Report skill_uninstall for each removed skill (detected local deletion)
   echo "$removed" | jq -r '.[]?' 2>/dev/null | while IFS= read -r skill_id; do
     [[ -z "$skill_id" ]] && continue
     local body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"detected_removal\"}}"
-    _http POST /events/track "$body" >/dev/null 2>&1 || true
+    _http POST /event/track "$body" >/dev/null 2>&1 || true
   done
 }
 
@@ -1207,7 +1207,7 @@ _bundle_track_installed() {
 
   local body="{\"action\":\"bundle_installed\",\"bundleId\":\"${bundle_id}\",\"userId\":\"${USER_ID}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
   local track_resp
-  track_resp="$(_http POST /events/track "$body")"
+  track_resp="$(_http POST /event/track "$body")"
   echo "{\"intent\":\"bundle:track-installed\",\"bundleId\":\"${bundle_id}\",\"tracked\":true,\"backend\":${track_resp}}"
 }
 
@@ -1471,7 +1471,7 @@ PYEOF
     paths_raw="$(_scan_find_paths "$skill_id")"
     if [[ -z "$paths_raw" ]]; then
       # Not found locally, just run clean:track
-      resp="$(_http POST /events/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
+      resp="$(_http POST /event/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
       echo "{\"intent\":\"uninstall:no-local\",\"skillId\":\"${skill_id}\",\"message\":\"Skill not found locally, uninstall recorded\",\"track\":${resp}}"
       exit 0
     fi
@@ -1517,7 +1517,7 @@ PYEOF
     done
 
     # Record uninstall event
-    track_resp="$(_http POST /events/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
+    track_resp="$(_http POST /event/track "{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"manual-uninstall\"}}")"
     # Refresh scan so scan.skills reflects deletion
     _do_scan
     echo "{\"intent\":\"uninstall\",\"skillId\":\"${skill_id}\",\"deleted\":[${deleted_json}],\"track\":${track_resp}}"
@@ -1546,7 +1546,7 @@ clean)
         exit 0
       fi
     fi
-    resp="$(_http GET "/users/${USER_ID}/zombies")"
+    resp="$(_http GET "/user/${USER_ID}/zombies")"
     _cache_write "zombies" "$resp"
     _inject_recommendations "$resp"
     ;;
@@ -1586,7 +1586,7 @@ weekly)
 
     # V1 C6: reason is always "zombie_cleanup" (no interactive reason prompt).
     body="{\"action\":\"skill_uninstall\",\"skillId\":\"${skill_id}\",\"userId\":\"${USER_ID}\",\"metadata\":{\"reason\":\"zombie_cleanup\"}}"
-    track_resp="$(_http POST /events/track "$body")"
+    track_resp="$(_http POST /event/track "$body")"
 
     # Protected skill: track only, don't delete
     if _is_protected "$skill_id"; then
@@ -1758,17 +1758,17 @@ PYEOF
       exit 0
     fi
 
-    items_count="$(echo "$resp" | jq '.items // [] | length' 2>/dev/null || echo 0)"
+    items_count="$(echo "$resp" | jq '(.items // .recommendations // []) | length' 2>/dev/null || echo 0)"
     if [[ "$items_count" -eq 0 ]]; then
       echo "{\"intent\":\"recommend\",\"items\":[],\"emptyReason\":\"no_recommendations_yet\"}"
       exit 0
     fi
 
     # Cache items for 24h so follow-up queries don't burn rate limit
-    items="$(echo "$resp" | jq -c '.items' 2>/dev/null || echo '[]')"
+    items="$(echo "$resp" | jq -c '(.items // .recommendations // [])' 2>/dev/null || echo '[]')"
     _save_recommendations "$items" >/dev/null 2>&1 || true
 
-    echo "$resp" | jq -c '{intent: "recommend", items: .items, cachedFor: "24h"}'
+    echo "$resp" | jq -c '{intent: "recommend", items: (.items // .recommendations // []), cachedFor: "24h"}'
     ;;
 
   search)
@@ -1829,11 +1829,12 @@ PYEOF
       exit 0
     fi
 
-    # Guard fresh_meat bucket: if user has <7 days of data, backend returns
-    # primaryPersona.id='fresh_meat'. AI shows "use longer then come back".
+    # Guard low-data bucket: backend returns status='brewing' or
+    # primaryPersona.id='fresh_meat'. AI shows brewing card and does not share.
+    report_status="$(echo "$resp" | jq -r '.status // empty' 2>/dev/null || echo '')"
     primary_id="$(echo "$resp" | jq -r '.primaryPersona.id // empty' 2>/dev/null || echo '')"
-    if [[ "$primary_id" == "fresh_meat" ]]; then
-      echo "$resp" | jq -c '. + {intent:"report", status:"not_ready", messageEn:"Use Mapick for a week, then come back for your persona report."}'
+    if [[ "$report_status" == "brewing" || "$primary_id" == "fresh_meat" ]]; then
+      echo "$resp" | jq -c '. + {intent:"report", status:(.status // "brewing"), messageEn:(.messageEn // ":lock: Your persona is brewing. Use Mapick for a few more skill actions before generating a shareable report.")}'
       exit 0
     fi
 
@@ -1892,7 +1893,7 @@ print(json.dumps({
       echo '{"intent":"security","error":"missing_argument","hint":"Usage: security <skillId>"}'
       exit 0
     fi
-    resp="$(_http GET "/security/${skill_id}")"
+    resp="$(_http GET "/skill/${skill_id}/security")"
     echo "$resp" | jq -c '. + {intent:"security"}'
     ;;
 
@@ -1918,7 +1919,7 @@ print(json.dumps({
     "contactMethod": "none",
 }))
 ')"
-    resp="$(_http POST "/security/report" "$body")"
+    resp="$(_http POST "/skill/${skill_id}/report" "$body")"
     echo "$resp" | jq -c '. + {intent:"security:report", skillId:"'"$skill_id"'"}'
     ;;
 
@@ -1958,7 +1959,7 @@ PYEOF
         skill_id="${2:-}"
         [[ -z "$skill_id" ]] && { echo '{"intent":"privacy:trust","error":"missing_argument","hint":"Usage: privacy trust <skillId>"}'; exit 0; }
         # Remote + local double-write (local is source of truth in V1)
-        _http POST /users/trusted-skills "{\"skillId\":\"${skill_id}\",\"permission\":\"pass_through\"}" >/dev/null 2>&1 || true
+        _http POST /user/trusted-skills "{\"skillId\":\"${skill_id}\",\"permission\":\"pass_through\"}" >/dev/null 2>&1 || true
         current="$(_config_get trusted_skills || echo '[]')"
         updated="$(SKILL_ID="$skill_id" LIST="$current" python3 -c 'import os, json; a = json.loads(os.environ.get("LIST","[]") or "[]"); s = os.environ["SKILL_ID"]; a = list(dict.fromkeys(a + [s])); print(json.dumps(a))')"
         _config_set trusted_skills "$updated"
@@ -1979,7 +1980,7 @@ PYEOF
           exit 0
         fi
         # Call backend GDPR erasure first
-        resp="$(_http DELETE /users/data "")"
+        resp="$(_http DELETE /user/data "")"
         # Clear local state — keep device_fp so subsequent sessions are
         # identical to a fresh install (not a weird "half-wiped" state)
         dfp="$(_config_get device_fp)"
@@ -1998,7 +1999,7 @@ EOF_CFG
       consent-agree)
         version="${2:-1.0}"
         now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        _http POST /users/consent "{\"consentVersion\":\"${version}\",\"agreedAt\":\"${now_utc}\"}" >/dev/null 2>&1 || true
+        _http POST /user/consent "{\"consentVersion\":\"${version}\",\"agreedAt\":\"${now_utc}\"}" >/dev/null 2>&1 || true
         _config_set consent_version "$version"
         _config_set consent_agreed_at "$now_utc"
         _config_del consent_declined 2>/dev/null || true
@@ -2039,7 +2040,7 @@ Mapickii - Mapick Smart Assistant (V1)
 Usage: bash shell.sh <command> [args...]
 
 Identity (debug only):
-  id                        View local device fingerprint
+  id                        Debug identifier
 
 Bundle recommendations (M3):
   bundle                    List bundles
@@ -2071,6 +2072,8 @@ Lifecycle:
   daily                     Daily digest
   weekly                    Weekly report
 
+Environment variables:
+  MAPICKII_API_BASE    Backend API prefix (default https://api.mapick.ai/api/v1)
 USAGE
     echo '{"error":"usage","message":"see stderr"}'
     ;;

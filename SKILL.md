@@ -1,37 +1,13 @@
 ---
 name: mapickii
-description: Use when users ask for skill recommendations, search, privacy, zombie cleanup, persona reports, security scores, bundles, workflows, or cost savings in OpenClaw environment.
-metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["node", "python3"] } } }
+description: Mapickii — Skill recommendation & privacy protection for OpenClaw. Scans your local skills, suggests what you're missing, and keeps other skills from seeing your secrets.
+metadata: { "openclaw": { "emoji": "🔍", "requires": { "bins": ["python3", "jq", "curl"] }, "primaryEnv": "MAPICKII_API_BASE" } }
 ---
 
 # Mapickii
 
 V1 principle: **Recommend to users, protect their privacy, let personas spread.**
 Priority: recommendation = privacy > persona sharing > safety score > cleanup > everything else.
-
----
-
-## When NOT to Use
-
-- User is NOT in OpenClaw environment (other AI platforms have different skill systems)
-- User asks about general recommendations (books, movies, restaurants) — not skill-specific
-- User's conversation has no mention of skills, tools, or AI capabilities
-- Platform lacks `node` or `python3` (metadata.requires check failed)
-
-If these apply, respond normally without invoking Mapickii commands.
-
-All command output below is **English reference** — AI must render in the user's
-conversation language.
-
----
-
-## Runtime Detection
-
-**Preferred:** Node.js → `node scripts/shell.js`
-
-**Fallback:** No Node.js but has Python3 → `bash scripts/shell.sh`
-
-AI should check `command -v node` first. If available, use shell.js (faster, better error handling). If Node.js unavailable, check `command -v python3` and use shell.sh.
 
 All command output below is **English reference** — AI must render in the user's
 conversation language.
@@ -43,35 +19,28 @@ conversation language.
 **Why this is first**: Mapickii's core value is helping users find skills they
 don't have but should. Everything else is secondary.
 
-## Intent Routing
-
-| Intent | Shell Command | Triggers |
-|--------|---------------|----------|
-| recommend | `recommend [limit]` | recommend/suggest/discover |
-| search | `search <keyword>` | search/find |
-| privacy | `privacy status/trust/delete` | privacy/redact |
-| persona | `report` | persona/analyze |
-| security | `security <skillId>` | security/trust |
-| status | `status` | status/overview |
-| clean | `clean` | clean/zombies |
-| workflow | `workflow` | workflow/routine |
-| bundle | `bundle` | bundle/pack |
-| daily | `daily` | daily/today |
-| weekly | `weekly` | weekly |
-
-Match triggers in ANY language. See `reference/intents.md` for multilingual examples.
-
 ### Intent: recommend
 
-Shell: `scripts/shell recommend [limit]` (Node.js preferred, Bash fallback)
+Reference triggers (English): recommend, suggest, find skill, what should I
+install, best skills, what am I missing, any suggestions, discover, skills for
+me, good skills.
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+**Match in ANY language** — recognize equivalents in whatever language the user
+speaks. Only treat this as the `recommend` intent when the user asks about
+**skills / tools / what to install** (not general-purpose "recommend a book").
+
+Shell command: `bash shell.sh recommend [limit]`
+Backend: `GET /recommendations/feed?limit=5` (DeviceFp guarded, 60/h rate limit)
 
 ### Intent: search
 
-Shell: `scripts/shell search <keyword>` (30/min)
+Reference triggers (English): search, find, look for, is there a skill for,
+find a skill that, anything for X.
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+**Match in ANY language**.
+
+Shell command: `bash shell.sh search <keyword> [limit]`
+Backend: `GET /skill/live-search?query=&limit=10` (DeviceFp guarded, 30/min)
 
 ### Rendering (recommend)
 
@@ -121,7 +90,7 @@ After rendering a recommend/search result, wait for the user's reply. On reply:
    natural-language reference).
 2. From the item's `installCommands[]`, pick the entry where `platform` is
    `openclaw` and run that `command` in the user's shell.
-3. On success, call `scripts/shell recommend:track <recId> <skillId> installed`
+3. On success, call `bash shell.sh recommend:track <recId> <skillId> installed`
    so the backend can tune future recommendations.
 4. On failure, reply with the error (translated), and suggest retry or skip.
 5. Confirm to user: "✅ {skillName} installed. Want to see more?"
@@ -143,16 +112,20 @@ chapter explains the protections.
 
 ### Intent: privacy
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+Reference triggers (English): privacy, redact, who can see my data, protect
+my data, stop tracking, delete my data, forget me, erase my account,
+anonymous mode.
+
+**Match in ANY language**.
 
 ### Subcommands
 
-- `scripts/shell privacy status` — show current consent + trusted skills list
-- `scripts/shell privacy trust <skillId>` — allow skill to see unredacted content
-- `scripts/shell privacy untrust <skillId>` — revoke previous trust grant
-- `scripts/shell privacy delete-all --confirm` — GDPR erasure: wipe local + backend
-- `scripts/shell privacy consent-agree <version>` — record user consent (called from init flow)
-- `scripts/shell privacy consent-decline` — user declined → permanent local-only mode
+- `bash shell.sh privacy status` — show current consent + trusted skills list
+- `bash shell.sh privacy trust <skillId>` — allow skill to see unredacted content
+- `bash shell.sh privacy untrust <skillId>` — revoke previous trust grant
+- `bash shell.sh privacy delete-all --confirm` — GDPR erasure: wipe local + backend
+- `bash shell.sh privacy consent-agree <version>` — record user consent (called from init flow)
+- `bash shell.sh privacy consent-decline` — user declined → permanent local-only mode
 
 ### First-install consent flow
 
@@ -164,8 +137,8 @@ When shell returns `status: "consent_required"`:
    - **Agree** — Mapickii uploads anonymous behavior data, returns recommendations.
    - **Decline** — Mapickii works in local-only mode (scan / clean / uninstall
      only, no recommendations, no backend calls).
-3. If user agrees → call `scripts/shell privacy consent-agree 1.0`.
-4. If user declines → call `scripts/shell privacy consent-decline`. Then tell
+3. If user agrees → call `bash shell.sh privacy consent-agree 1.0`.
+4. If user declines → call `bash shell.sh privacy consent-decline`. Then tell
    the user what's still available locally and what's gone; **do not re-prompt
    consent on future runs**.
 5. If user neither agrees nor declines in this session, state stays undecided;
@@ -173,7 +146,7 @@ When shell returns `status: "consent_required"`:
 
 ### Local-only mode behavior
 
-If `scripts/shell init` returns `status: "local_only"` (or any other command
+If `bash shell.sh init` returns `status: "local_only"` (or any other command
 returns `error: "disabled_in_local_mode"`):
 
 - Confirm local-only state to the user **once** per session.
@@ -186,13 +159,9 @@ returns `error: "disabled_in_local_mode"`):
 ### Redaction engine (local only)
 
 Before sharing any conversation text with **other** skills, AI **should** pipe
-it through `scripts/redact.js` (Node.js preferred) or `scripts/redact.py` (fallback):
+it through `scripts/redact.py`:
 
 ```bash
-# Node.js (preferred)
-echo "$USER_TEXT" | node ~/.openclaw/skills/mapickii/scripts/redact.js
-
-# Python3 (fallback, if Node unavailable)
 echo "$USER_TEXT" | python3 ~/.openclaw/skills/mapickii/scripts/redact.py
 ```
 
@@ -224,7 +193,7 @@ Before executing, **re-state the destructive scope** in the user's language:
 > trusted skills, recommendation feedback, share reports). It cannot be undone.
 
 Only after the user confirms a second time, execute
-`scripts/shell privacy delete-all --confirm`. On success, report which tables
+`bash shell.sh privacy delete-all --confirm`. On success, report which tables
 were cleared (from the shell response).
 
 ---
@@ -233,15 +202,20 @@ were cleared (from the shell response).
 
 ### Intent: report
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+> Match in ANY language. Reference triggers (English): analyze me, my persona,
+> my mapick report, who am I as a developer, developer type, roast me.
+>
+> Examples: "分析我" · "我的人格" · "analysiere mich" · "meine persönlichkeit" ·
+> "私を分析して" · "분석해줘" · "analyze my developer type" · "generate my report"
 
 Command: `/mapickii report`  (alias: `/mapickii persona`)
 
 ### Flow
 
 1. Call `report` — returns primaryPersona + shadowPersona + dataProfile (English).
-2. If `primaryPersona.id === "fresh_meat"` → tell the user to use Mapick for at least
-   7 days before coming back. Do NOT generate HTML.
+2. If `status === "brewing"` or `primaryPersona.id === "fresh_meat"` → render
+   `:lock: Your persona is brewing...`, briefly say more usage data is needed,
+   and do NOT generate or upload HTML.
 3. Otherwise, render a localized persona report to the user using `dataProfile`.
    Keep it short and witty — one screen. Use the user's `locale`.
 4. Generate a **self-contained HTML share page** per the Production Prompt
@@ -269,7 +243,11 @@ AI should not invoke this directly; only surface it if the user explicitly asks
 
 ### Intent: security
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+> Match in ANY language. Reference triggers (English): is X safe, security score
+> of X, safety of X, can I trust X, scan X, X trustworthy, audit X.
+>
+> Examples: "X 安全吗" · "X 的安全评分" · "ist X sicher" · "Xは安全ですか" ·
+> "can I install X" · "audit the github-ops skill"
 
 Command: `/mapickii security <skillId>`
 
@@ -290,7 +268,8 @@ Command: `/mapickii security <skillId>`
 
 ### Intent: security:report
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+> Match in ANY language. Reference triggers: report X as malicious, flag X,
+> X is suspicious, X stole my data, I want to report X.
 
 Command: `/mapickii security:report <skillId> <reason> <evidenceEn>`
 
@@ -314,9 +293,15 @@ AI should:
 
 ### Intent: status
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+Reference triggers (English): status, overview, dashboard, my skills, skill
+stats, how am I doing, skill summary.
 
-Shell: `scripts/shell status`
+**Match in ANY language** — recognize equivalents in whatever language the
+user speaks. The English words above are reference only, not an exhaustive
+allow-list.
+
+Shell command: `bash shell.sh status`
+Backend: `GET /assistant/status/:userId` (FpOrApiKeyGuard, DeviceFp accepted)
 
 ### Rendering (status)
 
@@ -370,7 +355,10 @@ skills to complete a workflow.
 
 ### Intent: bundle
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+Reference triggers (English): bundle, bundle recommendation, recommend a
+bundle, workflow pack, skill pack.
+
+**Match in ANY language**.
 
 | User input                      | Shell command                     | Notes                                  |
 | ------------------------------- | --------------------------------- | -------------------------------------- |
@@ -382,7 +370,7 @@ skills to complete a workflow.
 
 ### Bundle install — two-step flow (V1, by design)
 
-**Step 1**: `scripts/shell bundle:install <bundleId>` returns:
+**Step 1**: `bash shell.sh bundle:install <bundleId>` returns:
 
 ```json
 {
@@ -397,7 +385,7 @@ skills to complete a workflow.
 ```
 
 **Step 2**: AI executes each `installCommands[i].command` in the user's shell,
-tracks per-command result, then calls `scripts/shell bundle:track-installed <bundleId>`.
+tracks per-command result, then calls `bash shell.sh bundle:track-installed <bundleId>`.
 
 **Step 3**: Report summary to the user in their language: "Installed N of M
 skills from bundle <name>."
@@ -420,15 +408,25 @@ with short reason). Render in the user's language.
 
 ---
 
+## 6. Security Score
+
+> V1 PR-12 delivered. See **§3.5 Security Score** above for full spec (Intent,
+> flow, display rules, rate limits). This section kept as a cross-reference
+> for readers skimming the table of contents.
+
 ---
 
 ## 7. Zombie Cleanup
 
 ### Intent: clean
 
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
+Reference triggers (English): clean, cleanup, zombies, dead skills, unused,
+prune, get rid of unused skills.
 
-Shell: `scripts/shell clean`
+**Match in ANY language**.
+
+Shell command: `bash shell.sh clean`
+Backend: `GET /user/:userId/zombies` via `clean` case
 
 ### Rendering (clean)
 
@@ -441,7 +439,7 @@ When shell returns a zombie list:
 
 When user replies:
 - Numbers (e.g. `1 2`) → look up skillIds from the last rendered list, call
-  `scripts/shell clean:track <skillId>` for each, then `scripts/shell uninstall <skillId> --confirm`.
+  `bash shell.sh clean:track <skillId>` for each, then `bash shell.sh uninstall <skillId> --confirm`.
 - `all` → apply to every zombie.
 - `skip` → end the flow; reply "ok".
 
@@ -450,9 +448,9 @@ When user replies:
 
 ### Intent: uninstall
 
-> See `reference/intents.md` for trigger keywords.
+Reference triggers (English): uninstall, remove skill, delete skill, drop it.
 
-Shell: `scripts/shell uninstall <skillId> --confirm`
+Shell command: `bash shell.sh uninstall <skillId> --confirm`
 
 V1 default: `--scope` is `both` (user-level + project-level). Advanced users
 can pass `--scope user` or `--scope project` to limit removal.
@@ -464,16 +462,19 @@ can pass `--scope user` or `--scope project` to limit removal.
 ## 8. Workflow / Daily / Weekly
 
 ### Intent: workflow
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell: `scripts/shell workflow`
+Reference triggers (English): workflow, routine, pipeline, skill chain, common combos.
+**Match in ANY language**.
+Shell command: `bash shell.sh workflow`
 
 ### Intent: daily
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell: `scripts/shell daily`
+Reference triggers (English): daily, today, yesterday, daily report, what's today.
+**Match in ANY language**.
+Shell command: `bash shell.sh daily`
 
 ### Intent: weekly
-> See `reference/intents.md` for trigger keywords. Match in ANY language.
-Shell: `scripts/shell weekly`
+Reference triggers (English): weekly, this week, weekly summary, last week.
+**Match in ANY language**.
+Shell command: `bash shell.sh weekly`
 
 ### Rendering for these three
 
@@ -483,33 +484,25 @@ dividers.
 
 ---
 
-## Red Flags — STOP and Verify
-
-These signals mean you're about to violate a rule:
-
-| Signal | Required Action |
-|--------|-----------------|
-| User wants Grade C skill | **DO NOT show install option.** Show alternatives[] + red warning. User must explicitly acknowledge. |
-| `delete-all` request | Re-state destructive scope. Require second confirmation before executing. |
-| Local-only mode + recommend/search | Refuse with "requires consent; run `/mapickii privacy consent-agree 1.0`" |
-| Empty search results | Show template: broader keyword / category / recommend fallback |
-| `consent_required` status | Run consent flow once per session. Do not nag repeatedly. |
-
-**All of these require explicit user action before proceeding.**
-
----
-
-## Lifecycle Model
+## Lifecycle model (reference)
 
 Install → First use → Active → Declining → Zombie → Uninstall
 
-> Details: `reference/lifecycle.md`
+| Stage              | Trigger                          | Behavior                            |
+| ------------------ | -------------------------------- | ----------------------------------- |
+| Install            | Skill directory exists           | Record install time and path        |
+| First use          | First invocation                 | Measure activation delay            |
+| Activation timeout | No call within 7 days of install | Flag `activation_timeout`           |
+| Active             | ≥ 2 calls in 7 days              | Compute frequency, detect sequences |
+| Declining          | This week < 50% of last week     | Internal flag                       |
+| Zombie             | No call in 30 days               | Flag `zombie`, surface in `clean`   |
+| Uninstall          | User-triggered                   | Record reason, back up to `trash/`  |
 
 ---
 
 ## Auto-trigger (on every new conversation)
 
-Shell auto-runs `scripts/shell init` when AI detects a new Mapickii session.
+Shell auto-runs `bash shell.sh init` when AI detects a new Mapickii session.
 Shell is idempotent: 30-minute cooldown prevents repeated full scans.
 
 Responses:
@@ -526,7 +519,7 @@ After init completes, check CONFIG.md for `first_run_complete`.
 
 If `first_run_complete` does NOT exist:
 
-1. Run: `scripts/shell summary`
+1. Run: `bash shell.sh summary`
 2. Display the `data` payload as a formatted report to the user
    (use the summary card layout below; translate to the user's language).
 3. Immediately after the report, ask:
@@ -535,14 +528,14 @@ If `first_run_complete` does NOT exist:
     not just what's popular."
    Give 2 examples. Offer skip.
 4. If user answers with a workflow description:
-   - Run: `scripts/shell profile set "<answer verbatim>"`
-   - Run: `scripts/shell recommend --with-profile`
+   - Run: `bash shell.sh profile set "<answer verbatim>"`
+   - Run: `bash shell.sh recommend --with-profile`
    - Display the returned recommendations, noting any item whose `reasonEn`
      starts with `"Matches your workflow:"` is a tag-boosted pick.
 5. If user skips or asks something else:
-   - Run: `scripts/shell profile set "skipped"`
+   - Run: `bash shell.sh profile set "skipped"`
    - Proceed with their actual request normally.
-6. Run: `scripts/shell first-run-done` (marks the one-time flag so this
+6. Run: `bash shell.sh first-run-done` (marks the one-time flag so this
    summary never fires again for this user).
 
 If `first_run_complete` already exists: skip all of the above, respond
@@ -619,16 +612,16 @@ PR-4 will add: `/mapickii recommend`, `/mapickii search <keyword>`.
 PR-5 will add: `/mapickii privacy (status / delete-all / trust / consent-*)`.
 
 Internal commands (invoked by AI, not typed by user):
-- `scripts/shell clean:track <skillId>` — record uninstall event
-- `scripts/shell bundle:track-installed <bundleId>` — record bundle install
-- `scripts/shell summary` — first-run scan summary (PR-16)
-- `scripts/shell profile set "<text>"` — store workflow profile + async upload (PR-16)
-- `scripts/shell profile get` — read cached workflow profile (PR-16)
-- `scripts/shell first-run-done` — mark one-time first-run summary complete (PR-16)
-- `scripts/shell recommend --with-profile` — feed with profileTags boost (PR-16)
+- `bash shell.sh clean:track <skillId>` — record uninstall event
+- `bash shell.sh bundle:track-installed <bundleId>` — record bundle install
+- `bash shell.sh summary` — first-run scan summary (PR-16)
+- `bash shell.sh profile set "<text>"` — store workflow profile + async upload (PR-16)
+- `bash shell.sh profile get` — read cached workflow profile (PR-16)
+- `bash shell.sh first-run-done` — mark one-time first-run summary complete (PR-16)
+- `bash shell.sh recommend --with-profile` — feed with profileTags boost (PR-16)
 
 Debug only:
-- `scripts/shell id` — show local device fingerprint
+- `bash shell.sh id` — debug identifier
 
 ---
 
@@ -647,14 +640,44 @@ paraphrase the error reason in the user's language, not show the JSON.
 
 ---
 
-## Error Handling
+## CONFIG.md structure (auto-generated)
 
-Security red lines in Red Flags section above. Common errors:
+```yaml
+device_fp: <16-hex>            # sha256(hostname|uname-s|uname-m|HOME)[:16]
+created_at: <ISO8601>
+last_init_at: <ISO8601>        # 30-min idempotency tracker
+scan:                          # latest scan result
+  scanned_at: <ISO8601>
+  skills:
+    - id: <skillId>
+      name: <displayName>
+      path: <absolute-path>
+      installed_at: <ISO8601>
+      enabled: <bool>
+      last_modified: <ISO8601>
+  system: { os, arch, hostname, home, editors: {...} }
+recommendations:               # cached backend feed (PR-4)
+  cached_at: <ISO8601>
+  ttl_hours: 24
+  items: [...]
+first_run_complete: true       # one-time first-run flag (PR-16)
+first_run_at: <ISO8601>
+user_profile: <verbatim text>  # user workflow self-description (PR-16)
+user_profile_tags: [...]       # extracted keywords, lowercase, deduped
+user_profile_set_at: <ISO8601>
+```
 
-| Code | Meaning | Action |
-|------|---------|--------|
-| `missing_argument` | Arg missing | Re-prompt |
-| `protected_skill` | Uninstall mapickii | Refuse |
-| `service_unreachable` | Service down | Retry |
+Do not write to CONFIG.md directly — always go through shell commands.
 
-> Full list: `reference/errors.md`
+---
+
+## Error handling
+
+Common error codes from shell:
+
+- `missing_argument` — user didn't supply a required argument; re-prompt
+- `protected_skill` — tried to uninstall mapickii / mapick / tasa; refuse gracefully
+- `service_unreachable` — backend down or network fail; suggest retry later
+- `unknown_command` — typo or unsupported command; suggest `/mapickii help`
+
+Render error reason in the user's language. Don't echo the JSON verbatim.
