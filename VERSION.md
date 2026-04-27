@@ -2,6 +2,12 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.1.1 - 2026-04-27
+
+### Changed
+
+- Handle v2.1 backend: consent_required prompt + security fuzzy-match suggestions
+
 ## v0.1.0 - 2026-04-27
 
 ### Changed

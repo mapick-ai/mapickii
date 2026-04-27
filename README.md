@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.1.0-blue?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/version-v0.1.1-blue?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/platform-OpenClaw-purple?style=flat-square" alt="Platform" />
 </p>
@@ -91,19 +91,19 @@ clawhub install mapick
 ### One-line install (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v0.1.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/v0.1.1/install.sh | bash
 ```
 
 Or with `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v0.1.0/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/mapick-ai/mapickii/v0.1.1/install.sh | bash
 ```
 
 Pin a specific version:
 
 ```bash
-MAPICKII_VERSION=v0.1.0 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
+MAPICKII_VERSION=v0.1.1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mapick-ai/mapickii/main/install.sh)"
 ```
 
 Then just talk to your agent in any language:
