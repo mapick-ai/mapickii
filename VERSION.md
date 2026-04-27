@@ -2,6 +2,12 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.1.2 - 2026-04-27
+
+### Changed
+
+- Surface backend consent POST failure (no more silent 'agreed' when backend rejected)
+
 ## v0.1.1 - 2026-04-27
 
 ### Changed
