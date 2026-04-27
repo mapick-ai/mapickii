@@ -16,8 +16,24 @@ const CONFIG_FILE = path.join(CONFIG_DIR, "CONFIG.md");
 const TRASH_DIR = path.join(CONFIG_DIR, "trash");
 const REDACTJS_PATH = path.join(CONFIG_DIR, "redact.js");
 const API_BASE = process.env.MAPICKII_API_BASE || "https://api.mapick.ai/api/v1";
-const SKILLS_BASE =
-  process.env.SKILLS_BASE || path.join(os.homedir(), ".openclaw", "skills");
+// 探测 skills 安装目录：openclaw / claude / codex 各平台路径不同。
+// 优先级：env override → ~/.openclaw → ~/.claude → ~/.codex；都不存在则用 .openclaw
+// 默认候选（首次安装会创建）。
+function detectSkillsBase() {
+  const home = os.homedir();
+  const candidates = [
+    process.env.SKILLS_BASE,
+    process.env.MAPICKII_SKILLS_BASE,
+    path.join(home, ".openclaw", "skills"),
+    path.join(home, ".claude", "skills"),
+    path.join(home, ".codex", "skills"),
+  ].filter(Boolean);
+  for (const dir of candidates) {
+    if (fs.existsSync(dir)) return dir;
+  }
+  return candidates[0] || path.join(home, ".openclaw", "skills");
+}
+const SKILLS_BASE = detectSkillsBase();
 const CACHE_DIR = path.join(os.homedir(), ".mapickii", "cache");
 
 const VALID_TRACK_ACTIONS = [
@@ -171,6 +187,24 @@ async function httpCall(method, endpoint, body = null) {
   });
 }
 
+// 轻量 frontmatter 解析：只取首块 ---...--- 的扁平 key:value（不支持嵌套）。
+// 解析 boolean / 去引号；其他原样字符串。够用于读 enabled/disabled 这种简单字段。
+function parseFrontmatter(content) {
+  const m = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!m) return {};
+  const out = {};
+  m[1].split("\n").forEach((line) => {
+    const km = line.match(/^([a-z_][a-z0-9_]*)\s*:\s*(.+)$/i);
+    if (!km) return;
+    let v = km[2].trim();
+    if (v === "true") v = true;
+    else if (v === "false") v = false;
+    else v = v.replace(/^["']|["']$/g, "");
+    out[km[1]] = v;
+  });
+  return out;
+}
+
 function scanSkills() {
   const skills = [];
   if (!fs.existsSync(SKILLS_BASE)) return skills;
@@ -180,14 +214,15 @@ function scanSkills() {
     const skillFile = path.join(skillPath, "SKILL.md");
     if (fs.statSync(skillPath).isDirectory() && fs.existsSync(skillFile)) {
       const content = fs.readFileSync(skillFile, "utf8");
-      const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+)[\s\S]*?---/);
+      const fm = parseFrontmatter(content);
       skills.push({
         id: dir,
-        name: nameMatch ? nameMatch[1].trim() : dir,
+        name: typeof fm.name === "string" && fm.name ? fm.name : dir,
         path: skillPath,
         installed_at: fs.statSync(skillPath).birthtime.toISOString(),
         last_modified: fs.statSync(skillFile).mtime.toISOString(),
-        enabled: true,
+        // 默认启用；frontmatter 显式 disabled: true 才标 false
+        enabled: fm.disabled !== true,
       });
     }
   });
@@ -295,12 +330,30 @@ async function main() {
           privacy: "Anonymous by design. No registration.",
         };
       } else {
+        // 真实计算 zombie / activation_rate / never_used，替代之前的硬编码 0/二分。
+        // 数据来源都是本地 mtime/frontmatter；后端的 invokeCount cron 是另一套精确数据。
+        const zombieDays = parseInt(
+          process.env.MAPICKII_ZOMBIE_DAYS || "30",
+          10,
+        );
+        const now = Date.now();
+        const ageDays = (s) =>
+          (now - new Date(s.last_modified).getTime()) / 86_400_000;
+
+        const zombies = skills.filter((s) => ageDays(s) > zombieDays);
+        const total = skills.length;
+        // active = 启用且非 zombie；既排除显式 disabled 也排除长期未动的
+        const active = skills.filter(
+          (s) => s.enabled && ageDays(s) <= zombieDays,
+        ).length;
+
         result = {
           intent: "status",
           skills,
           activation_rate:
-            skills.filter((s) => s.enabled).length > 0 ? "100%" : "0%",
-          zombie_count: 0,
+            total > 0 ? `${Math.round((active / total) * 100)}%` : "0%",
+          zombie_count: zombies.length,
+          // never_used 仍按 last_modified 做近似（本地拿不到真实调用次数）
           never_used: skills.filter((s) => !s.last_modified).length,
         };
       }
