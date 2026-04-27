@@ -788,19 +788,42 @@ async function main() {
           };
           break;
 
-        case "consent-agree":
+        case "consent-agree": {
+          // PR-21: 之前 httpCall 返回值被丢弃，POST 失败时本地仍写 CONFIG 显示
+          // "已同意"。结果：user_consents 表里没记录 → 后续 ConsentGuard 仍 403。
+          // 现在必须 POST 成功才写本地；失败时把 backend 错误透传，AI 才能告诉
+          // 用户真实情况而不是错误地以为"已同意"。
           const version = ARGS[1] || "1.0";
           const now = isoNow();
-          await httpCall("POST", "/users/consent", {
+          const resp = await httpCall("POST", "/users/consent", {
             consentVersion: version,
             agreedAt: now,
           });
+          if (resp && resp.error) {
+            // 不写本地 — 保持"未同意"状态与 backend 对齐
+            result = {
+              intent: "privacy:consent-agree",
+              error: "backend_consent_failed",
+              backend_error: resp.error,
+              backend_message: resp.message ?? null,
+              backend_status: resp.statusCode ?? null,
+              hint: "Backend did not record your consent. Check your network / API base URL, then retry.",
+            };
+            break;
+          }
           writeConfig("consent_version", version);
           writeConfig("consent_agreed_at", now);
           deleteConfig("consent_declined");
           deleteConfig("consent_declined_at");
-          result = { intent: "privacy:consent-agree", version, agreedAt: now };
+          result = {
+            intent: "privacy:consent-agree",
+            version,
+            agreedAt: now,
+            // backend 确认的 consentId（让 AI 能告诉用户"后端已记录"）
+            consentId: resp?.consentId ?? null,
+          };
           break;
+        }
 
         case "consent-decline":
           const declinedAt = isoNow();

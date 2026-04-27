@@ -822,9 +822,18 @@ Common error codes from shell / backend:
   Once you choose, I'll continue with what you asked.
   ```
 
-  After user picks agree → call `privacy consent-agree 1.0` then **retry the
-  original command they asked for**, don't make them re-type. After decline →
-  acknowledge local-only mode and stop the failed flow.
+  After user picks agree → call `privacy consent-agree 1.0`. **Inspect the
+  return value before retrying:**
+
+  - Success shape `{intent: "privacy:consent-agree", version, agreedAt, consentId}`
+    → backend recorded it. Now retry the original command.
+  - Failure shape `{intent: "privacy:consent-agree", error: "backend_consent_failed",
+    backend_error, backend_message, backend_status}` → backend rejected /
+    network failed. Tell the user the actual reason (translate
+    `backend_message`), do NOT pretend they're consented, do NOT retry the
+    original command. They can re-try `consent-agree` later.
+
+  After decline → acknowledge local-only mode and stop the failed flow.
 
 - `disabled_in_local_mode` — user previously declined consent and is asking
   for a backend feature. Refuse gracefully: "You're in local-only mode. To
