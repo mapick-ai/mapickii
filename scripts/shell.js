@@ -245,6 +245,97 @@ function isoNow() {
   return new Date().toISOString();
 }
 
+// 统计 redact.js 中规则数（用于 summary 卡片"X rules active"提示）
+// 简单算法：扫文件源里行首 `[/` 的 RULES 元组项数量。redact.js 改动后自动跟随。
+// 候选路径：
+//   - REDACTJS_PATH（CONFIG_DIR/redact.js）—— 历史路径，可能落在 mapickii/redact.js
+//   - __dirname/redact.js —— 与 shell.js 同目录的 scripts/redact.js（实际位置）
+function countRedactRules() {
+  const candidates = [REDACTJS_PATH, path.join(__dirname, "redact.js")];
+  for (const file of candidates) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      const content = fs.readFileSync(file, "utf8");
+      const matches = content.match(/^\s*\[\//gm);
+      if (matches && matches.length > 0) return matches.length;
+    } catch {
+      /* try next */
+    }
+  }
+  return 0;
+}
+
+// 提取 profile 关键词：英文单词 + CJK 整词，去停用词去重，全部小写
+// 用户输入 "Backend, Go + K8s, reading logs" → ["backend","go","k8s","reading","logs"]
+// 用户输入 "后端开发，Go + K8s，看日志" → ["后端开发","go","k8s","看日志"]
+function extractProfileTags(text) {
+  if (!text) return [];
+  const STOPWORDS = new Set([
+    "and", "or", "the", "a", "an", "of", "in", "to", "for", "with", "i", "my",
+    "is", "are", "do", "does", "doing", "use", "using", "uses",
+    "和", "或", "的", "是", "在", "我", "你", "用", "做",
+  ]);
+  // 切分：空白 + 标点（中英），保留 CJK 整词
+  const tokens = text
+    .toLowerCase()
+    .split(/[\s,，.。、；;:!?！？()（）{}\[\]【】"'`+]+/u)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t));
+  return [...new Set(tokens)];
+}
+
+// 聚合 summary：local skills + 可选 backend status（top_used/security counts）。
+// backend 不可用（无 consent 或网络故障）时只返回 local 部分，has_backend=false。
+async function aggregateSummary(skills, config) {
+  const zombieDays = parseInt(process.env.MAPICKII_ZOMBIE_DAYS || "30", 10);
+  const now = Date.now();
+  const ageDays = (s) =>
+    (now - new Date(s.last_modified).getTime()) / 86_400_000;
+
+  const total = skills.length;
+  const zombies = skills.filter((s) => ageDays(s) > zombieDays);
+  const active = skills.filter(
+    (s) => s.enabled !== false && ageDays(s) <= zombieDays,
+  ).length;
+  const neverUsed = skills.filter(
+    (s) => s.installed_at && s.last_modified === s.installed_at,
+  ).length;
+  // context 占用估算：每个 zombie 约 2%，封顶 60%（V1 粗略，后端稳定后可换真实占比）
+  const contextWastePct = Math.min(60, zombies.length * 2);
+
+  const summary = {
+    intent: "summary",
+    privacy_rules: countRedactRules(),
+    total,
+    active,
+    never_used: neverUsed,
+    idle_30: zombies.length,
+    activation_rate:
+      total > 0 ? `${Math.round((active / total) * 100)}%` : "0%",
+    zombie_count: zombies.length,
+    context_waste_pct: contextWastePct,
+    top_used: [],
+    security: null,
+    has_backend: false,
+  };
+
+  // backend 增强：top_used + security A/B/C 计数。未给 consent 直接跳。
+  if (!hasConsent(config) || isConsentDeclined(config)) return summary;
+
+  const fp = deviceFp();
+  try {
+    const status = await httpCall("GET", `/assistant/status/${fp}`);
+    if (status && !status.error) {
+      summary.has_backend = true;
+      if (Array.isArray(status.top_used)) summary.top_used = status.top_used;
+      if (status.security) summary.security = status.security;
+    }
+  } catch {
+    /* graceful degrade — local 数据照常返回 */
+  }
+  return summary;
+}
+
 function isConsentDeclined(config) {
   return config.consent_declined === "true";
 }
@@ -364,27 +455,46 @@ async function main() {
       result = { intent: "scan", skills: scannedSkills, scanned_at: isoNow() };
       break;
 
-    case "recommend":
-      const limit = parseInt(ARGS[0]) || 5;
+    case "recommend": {
+      // --with-profile：把 CONFIG.md 里 user_profile_tags 拼到 query 让后端 boost。
+      const withProfile = ARGS.includes("--with-profile");
+      const numericArgs = ARGS.filter((a) => !a.startsWith("--"));
+      const limit = parseInt(numericArgs[0]) || 5;
       const cacheKey = `recommend_${fp}`;
       const cached = readCache(cacheKey);
-      if (cached && ARGS.length === 0) {
+      // 显式 limit 或 --with-profile 都强制走后端，绕过 24h 缓存
+      const useCache = !withProfile && numericArgs.length === 0;
+      if (useCache && cached) {
         result = { intent: "recommend", items: cached.items, cached: true };
       } else {
-        const resp = await httpCall(
-          "GET",
-          `/recommendations/feed?limit=${limit}`,
-        );
+        let url = `/recommendations/feed?limit=${limit}`;
+        if (withProfile) {
+          const tagsRaw = config.user_profile_tags || "";
+          // CONFIG 存的是 JSON 数组字符串，解析失败兜底为逗号分隔
+          let tags = [];
+          try {
+            tags = JSON.parse(tagsRaw);
+          } catch {
+            tags = tagsRaw.split(",").filter(Boolean);
+          }
+          if (tags.length > 0) {
+            url += `&profileTags=${encodeURIComponent(tags.join(","))}`;
+          }
+          url += `&withProfile=1`;
+        }
+        const resp = await httpCall("GET", url);
         if (resp.error) result = resp;
         else {
           result = {
             intent: "recommend",
             items: resp.items || resp.recommendations || [],
+            withProfile,
           };
           writeCache(cacheKey, { items: result.items });
         }
       }
       break;
+    }
 
     case "recommend:track":
       if (ARGS.length < 3) {
@@ -749,6 +859,84 @@ async function main() {
       result.intent = "event:track";
       break;
 
+    // 首次安装诊断卡聚合：local skills + （可选）backend top_used / security counts
+    case "summary": {
+      const skills = scanSkills();
+      result = await aggregateSummary(skills, config);
+      break;
+    }
+
+    // 用户工作流自描述：profile set/get/clear。set 同时把抽取的 tags 异步上传后端（有 consent 时）。
+    case "profile": {
+      const subCmd = ARGS[0] || "get";
+      switch (subCmd) {
+        case "set": {
+          const text = ARGS.slice(1).join(" ").trim();
+          if (!text) {
+            result = {
+              error: "missing_argument",
+              hint: "Usage: profile set \"<workflow text>\"",
+            };
+            break;
+          }
+          const tags = extractProfileTags(text);
+          writeConfig("user_profile", text);
+          writeConfig("user_profile_tags", JSON.stringify(tags));
+          writeConfig("user_profile_set_at", isoNow());
+          // 后端有 consent 时把 profile 上传，让推荐能 boost；失败不阻塞本地存储
+          let uploaded = false;
+          if (hasConsent(config) && !isConsentDeclined(config)) {
+            const resp = await httpCall("POST", "/users/profile", {
+              userId: fp,
+              profile: text,
+              tags,
+            });
+            uploaded = !resp.error;
+          }
+          result = { intent: "profile:set", profile: text, tags, uploaded };
+          break;
+        }
+        case "get": {
+          let tags = [];
+          try {
+            tags = JSON.parse(config.user_profile_tags || "[]");
+          } catch {
+            tags = [];
+          }
+          result = {
+            intent: "profile:get",
+            profile: config.user_profile || null,
+            tags,
+            set_at: config.user_profile_set_at || null,
+          };
+          break;
+        }
+        case "clear": {
+          deleteConfig("user_profile");
+          deleteConfig("user_profile_tags");
+          deleteConfig("user_profile_set_at");
+          // 清 profile 顺带清 first_run_complete，让下次 init 重新触发首次诊断卡
+          deleteConfig("first_run_complete");
+          deleteConfig("first_run_at");
+          result = { intent: "profile:clear", cleared: true };
+          break;
+        }
+        default:
+          result = {
+            error: "unknown_subcommand",
+            hint: "Available: set | get | clear",
+          };
+      }
+      break;
+    }
+
+    // 标记首次诊断流程完成（一次性 flag，避免每次启动都跑首次诊断卡）
+    case "first-run-done":
+      writeConfig("first_run_complete", "true");
+      writeConfig("first_run_at", isoNow());
+      result = { intent: "first-run-done", done: true };
+      break;
+
     case "id":
       result = { intent: "id", debug_identifier: fp };
       break;
@@ -786,6 +974,11 @@ Commands:
   privacy consent-agree [version]  Record consent
   privacy consent-decline      Decline consent (local-only mode)
   event:track <userId> <action> [skillId]  Record event
+  summary                 First-run diagnostic (local + optional backend)
+  profile set "<text>"    Save user workflow self-description
+  profile get             Read cached workflow profile
+  profile clear           Reset profile + retrigger first-run summary
+  first-run-done          Mark one-time first-run flag complete
   id                      Debug identifier (debug)`);
       result = { error: "usage" };
       break;
