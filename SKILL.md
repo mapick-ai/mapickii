@@ -47,20 +47,27 @@ Backend: `GET /skill/live-search?query=&limit=10` (DeviceFp guarded, 30/min)
 When shell returns `{ intent: "recommend", items: [...] }`:
 
 1. **Filter out items with `score < 0.4`** — they're too weak to surface.
-2. **Open with one sentence**: "I found N skills that might help you."
-3. **Show 3 items max**. For each item:
-   - Skill name
-   - One-line description (translate from `reasonEn` to the user's language)
-   - Human-friendly install count ("23K installs")
-   - Confidence phrase derived from `score`:
-     - `score > 0.7` → "highly recommended" (localized)
-     - `0.4 ≤ score ≤ 0.7` → "might be useful" (localized)
-   - Safety badge: 🟢 A / 🟡 B / 🔴 C from `safetyGrade`. If `C`, mention the
-     top entry from `alternatives[]`.
-4. **Close** with a call-to-action: "Reply with 1-3 to install, or ask for more."
+2. **Open with a problem statement**, not a product catalog. Instead of "I found
+   N skills", say what GAP the user has:
+   "You have github but no review tool — your PRs are all manual."
+   "You described log debugging but don't have a log analyzer."
+   If no user profile exists, infer from installed skills.
+3. **Show 3 items max**. For EACH item, you MUST:
+   - **Connect it to the user**: reference something they said, do, or have installed.
+     ("You use github 12x/day but don't have code-review")
+     ("Matches your 'debug with logs' workflow")
+   - **Say what it replaces**: what manual work goes away.
+     ("Instead of scrolling 200 lines of logs, say 'find the error'")
+   - **Show**: skill name + one-line benefit + safety badge (🟢A / 🟡B / 🔴C)
+     + human-friendly install count ("23K installs")
+   - If Grade C, show top `alternatives[]` entry instead.
+4. **Close with total impact + call-to-action**:
+   "Filling these 3 gaps covers your workflow end to end.
+    Reply with numbers to install, or 'install all'."
 
-**Never** show raw `score` numbers (0.85, 0.62, etc.) to the user — they're
-meaningless. Always translate to the confidence phrase above.
+**NEVER** show raw `score` numbers (3.614, 0.85) to the user.
+**NEVER** just list skill names with stats — that's a catalog, not a recommendation.
+The user should feel "this is for ME", not "here are some products".
 
 ### Rendering (search)
 
@@ -213,11 +220,32 @@ Command: `/mapickii report`  (alias: `/mapickii persona`)
 ### Flow
 
 1. Call `report` — returns primaryPersona + shadowPersona + dataProfile (English).
-2. If `status === "brewing"` or `primaryPersona.id === "fresh_meat"` → render
-   `:lock: Your persona is brewing...`, briefly say more usage data is needed,
-   and do NOT generate or upload HTML.
-3. Otherwise, render a localized persona report to the user using `dataProfile`.
-   Keep it short and witty — one screen. Use the user's `locale`.
+2. If `primaryPersona.id === "fresh_meat"` OR `dataProfile.usageDays < 7` OR
+   `dataProfile.totalInvocations < 50`:
+
+   **DO NOT show a full report with zeros. Instead render this:**
+
+   ```
+   🔒 Your persona is brewing...
+
+   Need 7 days of usage data to generate an accurate profile.
+   You're on day <usageDays>, <7 - usageDays> to go.
+
+   What we know so far:
+   - Installed <skillsCount> skills on day 1
+     (that's <more/fewer/about average> compared to other users)
+   - Active hours: <timeRange>
+     (early bird? night owl? we'll see)
+
+   Come back in <remaining> days, or just say "analyze me" anytime.
+   ```
+
+   **A card full of zeros creates nothing. A "brewing" card creates anticipation.**
+   Do NOT generate HTML share page for incomplete data.
+
+3. Otherwise (sufficient data), render a localized persona report to the user
+   using `dataProfile`. Keep it short and witty — one screen. Use the user's
+   `locale`.
 4. Generate a **self-contained HTML share page** per the Production Prompt
    in [`prompts/persona-production.md`](prompts/persona-production.md).
    Save HTML to a temp file (e.g. `/tmp/mapickii-report-{reportId}.html`).
@@ -257,14 +285,22 @@ Command: `/mapickii security <skillId>`
    `alternatives[]` + `detailsEn`.
 2. Localize `detailsEn` into the user's locale.
 3. **Display rule (STRICT)**:
-   - Grade **A**: show a short "✓ Safe" summary + key signals (networkRequests,
-     fileAccess).
-   - Grade **B**: show "⚠ Caveats" + explain what signals are elevated.
-     User can still install, but surface the tradeoff.
-   - Grade **C**: **DO NOT show the skill's name as an installable option.**
-     Instead, show a red warning + the `alternatives[]` list (same category,
-     grade A). User must explicitly acknowledge to proceed.
-4. If `lastScannedAt` is null, tell the user "not yet scanned — proceed with caution."
+   - Grade **A**: celebrate it. "✅ Clean bill of health. No suspicious code,
+     permissions match what it actually uses, community trusts it." Make the
+     user feel good about their choice.
+   - Grade **B**: create tension. "⚠️ Not a dealbreaker, but worth knowing..."
+     Then explain what specific signals are elevated — don't just say "caveats".
+     Say "It requests network:all but only uses network:api — that's like asking
+     for a master key when it only needs one room." End with: "Install anyway,
+     or check the alternative?"
+   - Grade **C**: **dramatic reveal.** "🚫 I would NOT install this." Lead with
+     the worst finding first (eval(), rm -rf, data exfiltration pattern). Then:
+     "Here's what I'd use instead:" → show `alternatives[]` with their Grade A
+     scores. The user should feel like Mapick just saved them from something.
+     **DO NOT show the C-grade skill as installable.**
+   - If `lastScannedAt` is null: "⚠️ This skill hasn't been scanned yet.
+     That doesn't mean it's bad — it means nobody's checked. Proceed with
+     caution or wait for a scan."
 
 ### Intent: security:report
 
@@ -307,14 +343,27 @@ Backend: `GET /assistant/status/:userId` (FpOrApiKeyGuard, DeviceFp accepted)
 
 When shell returns `{ intent: "status", ... }`:
 
-- Lead with a one-sentence health summary: total skills / active / zombie /
-  never-used, and the activation rate as a percentage.
-- If there's a top workflow, mention it in one line.
-- If zombies > 0, gently suggest running `clean`.
+1. **Lead with a verdict, not a dashboard.** Not "you have 47 skills" but:
+   "You have 47 skills installed but only use 14 of them. Your activation rate
+    is 30% — that puts you in the bottom quarter. Most users who clean up see
+    their agent speed double."
 
-Render in the user's language. Keep it tight — no ASCII dividers, no
-decorative emojis. Safety-grade emojis (🟢 A / 🟡 B / 🔴 C) are OK when they
-carry meaning.
+2. **Surface one hidden insight** the user didn't ask for:
+   - If zombie_count > 10: "Fun fact: you have more dead skills than active ones."
+   - If top skill usage > 10x/day: "You use <skill> more than 95% of users.
+     Have you tried <related-skill>? It pairs well."
+   - If activation_rate > 80%: "Your activation rate is <N>% — you're in the
+     top 10%. You only install what you actually use."
+   - If all skills are Grade A: "All your skills are Grade A. Clean setup."
+
+3. **End with one specific action**, not a menu of options:
+   - If zombies > 5: "Say 'clean up' to reclaim <X>% of your context."
+   - If activation_rate > 70% and no zombies: "You're in great shape. Try
+     'analyze me' to see your developer persona."
+   - Otherwise: "Say 'recommend' to find what you're missing."
+
+Do NOT show a command list. The user didn't ask "what can you do" — they asked
+"how am I doing". Answer that question, then suggest ONE next step.
 
 ### First install rendering (`status: "first_install"`)
 
@@ -432,10 +481,26 @@ Backend: `GET /user/:userId/zombies` via `clean` case
 
 When shell returns a zombie list:
 
-- Open with one line: "Found N zombie skills (30+ days inactive)."
-- List them as numbered items, short description each.
-- Close with a call-to-action: "Reply with numbers to uninstall (e.g. `1 3 5`),
-  `all`, or `skip`."
+1. **Open with impact, not count.** Not "Found N zombie skills" but:
+   "Your agent is carrying N dead skills. They eat <X>% of your context
+    window every single conversation — you're paying for them in speed
+    and token cost but getting zero value back."
+
+2. **Split zombies into two groups:**
+   - "Never used (why did you install these?):" — skills with 0 total calls.
+     Show install date to make it sting: "installed 61 days ago, never once used"
+   - "Used to be useful:" — skills with calls but idle 30+ days.
+     Show last use date: "last used 47 days ago"
+
+3. **Show the before/after:**
+   "Clean all N → context drops from <X>% to <Y>%, every response gets faster."
+
+4. **Make cleanup dead simple:**
+   "Reply 'clean all' to remove everything, or pick numbers (e.g. '1-8 15 17')
+    to keep the ones you might still need."
+
+The goal: user should feel slightly embarrassed about hoarding, then satisfied
+after cleaning. Like clearing 47GB of phone storage.
 
 When user replies:
 - Numbers (e.g. `1 2`) → look up skillIds from the last rendered list, call
@@ -530,8 +595,15 @@ If `first_run_complete` does NOT exist:
 4. If user answers with a workflow description:
    - Run: `bash shell.sh profile set "<answer verbatim>"`
    - Run: `bash shell.sh recommend --with-profile`
-   - Display the returned recommendations, noting any item whose `reasonEn`
-     starts with `"Matches your workflow:"` is a tag-boosted pick.
+   - DO NOT just list the results as a catalog.
+   - For EACH recommended skill, connect it to what the user just said:
+     "You said you review PRs → code-review automates that"
+     "You said you read logs → log-analyzer lets you search instead of scroll"
+   - Check which workflow tasks already have coverage (installed skill exists):
+     "You said bug tracking → you already have github ✅"
+   - End with total impact:
+     "Filling these N gaps covers your full workflow.
+      Reply 'install all' or pick numbers."
 5. If user skips or asks something else:
    - Run: `bash shell.sh profile set "skipped"`
    - Proceed with their actual request normally.
@@ -546,44 +618,76 @@ Output the summary report AND the question in a single response.
 
 ### Summary card layout (render in the user's language)
 
+**Make this feel like a system diagnostic, not a data dump.** The user just
+installed Mapick — this is the first impression. It should feel like a doctor
+running a scan and telling you "here's what I found."
+
 ```
-mapick: 📊 Mapick scan complete.
+mapick: 📊 Scan complete. Here's what I found.
 
 🔒 Privacy
-Redaction engine: active (<privacy_rules> rules)
-Your API keys, SSH keys, tokens → auto-filtered
-No conversation content leaves your device
+Your redaction engine is live — 23 rules active.
+API keys, SSH keys, tokens, personal IDs → auto-stripped
+before any skill can see them.
+Right now, <total> skills have access to your conversations.
+After redaction, they see: [REDACTED].
 
-📦 Skills: <total> installed
-✅ Active (used this week)      <active>
-⚠️ Never used                   <never_used>
-💤 Idle 30+ days                <idle_30>
-🛡️ Security: <security.A> Grade A · <security.B> Grade B · <security.C> Grade C
+📦 Your skill inventory
+<total> installed — but let's be honest:
+  ✅ <active> you actually use
+  ⚠️ <never_used> you've NEVER used (why are these here?)
+  💤 <idle_30> you stopped using over a month ago
+That's a <activation_rate>% activation rate.
 
-🔥 Your most-used                                    # skip if top_used empty
-1. <top_used[0].name>      <top_used[0].daily>x/day
+🔥 Your heavy hitters
+1. <top_used[0].name>      <top_used[0].daily>x/day — your workhorse
 2. <top_used[1].name>      <top_used[1].daily>x/day
 3. <top_used[2].name>      <top_used[2].daily>x/day
 
-⚠️ <zombie_count> zombies eating <context_waste_pct>% of your context window
-⚠️ <security.C> skill(s) with Grade C — consider replacing   # skip if 0
+🛡️ Safety check
+<security.A> skills passed (Grade A)
+<security.B> flagged minor issues (Grade B)
+<security.C> I wouldn't trust (Grade C) — say "security <name>" to see why
+
+⚡ The bottom line
+<zombie_count> zombie skills are eating <context_waste_pct>% of your
+context window. Every conversation, your agent loads them for nothing.
+Clean them and everything gets faster.
 ```
+
+If `never_used` is 0 and `idle_30` is 0: skip the negativity. Instead:
+"Clean setup. Everything you installed, you actually use. That puts you
+in the top 10% of OpenClaw users."
+
+If `total` is ≤ 3: skip the zombie/cleanup angle. Instead focus on discovery:
+"You're just getting started. Let me help you find tools that match
+your workflow."
 
 ### Example recommendation output (after user answers)
 
 ```
-mapick: Got it. Based on your stack + workflow:
+mapick: Got it. Mapping your workflow to skills:
 
-🎯 3 skills would fill your gaps:
+  ✅ Bug tracking → you already have github
+  ❌ PR review → no review tool installed
+  ❌ Log debugging → no log analyzer installed
+  ❌ Cluster monitoring → no K8s dashboard
 
-1. code-review   — automate PR reviews                Grade A
-   Matches your workflow: review, prs
-2. log-analyzer  — AI-powered log search              Grade A
-   Matches your workflow: debug, logs
-3. k8s-dashboard — cluster monitoring                 Grade A
-   Matches your workflow: k8s
+  🎯 3 skills to fill your gaps:
 
-Install all 3? Reply "install all" or pick numbers.
+  1. code-review — automate PR reviews
+     You said you review PRs — this replaces manual reviewing
+     82% of github heavy users also install this          🟢 A
+
+  2. log-analyzer — AI-powered log search
+     You said you debug with logs — say "find the error"
+     instead of scrolling 200 lines                       🟢 A
+
+  3. k8s-dashboard — cluster monitoring
+     You said you use K8s — real-time pod/node status      🟢 A
+
+  Filling these 3 gaps covers your full workflow.
+  Reply "install all" or pick numbers.
 ```
 
 Match in ANY language — user may phrase workflow as "后端开发，Go + K8s，
@@ -621,7 +725,7 @@ Internal commands (invoked by AI, not typed by user):
 - `bash shell.sh recommend --with-profile` — feed with profileTags boost (PR-16)
 
 Debug only:
-- `bash shell.sh id` — debug identifier
+- `bash shell.sh id` — show local device fingerprint
 
 ---
 
