@@ -2,6 +2,12 @@
 
 All notable changes to Mapickii will be documented in this file.
 
+## v0.1.0 - 2026-04-27
+
+### Changed
+
+- 0427 rewrite: workflow connection / zombie shame / security drama / system diagnostic
+
 ## v0.0.13 - 2026-04-27
 
 ### Changed
