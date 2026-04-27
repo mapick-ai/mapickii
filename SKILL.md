@@ -281,10 +281,32 @@ Command: `/mapickii security <skillId>`
 
 ### Flow
 
-1. Call `security <skillId>` — returns `safetyGrade` (A/B/C) + `signals` +
-   `alternatives[]` + `detailsEn`.
-2. Localize `detailsEn` into the user's locale.
-3. **Display rule (STRICT)**:
+1. Call `security <skillId>` — backend either returns:
+
+   **Hit** (skill exists, scanned):
+   `{ matched: true, safetyGrade, signals, alternatives[], detailsEn, lastScannedAt }`
+
+   **Fuzzy / not found** (user gave a keyword like `github` instead of full
+   skillId like `lobehub:agent:github-issue-helper`):
+   `{ matched: false, query, message, suggestions: [{skillId, skillName, description}, ...] }`
+
+2. **If `matched === false`**, render a "did you mean" prompt. Do NOT pretend
+   the lookup failed. Example:
+
+   ```
+   I couldn't find an exact safety report for "<query>". A few related
+   skills you might mean:
+
+   1. <suggestions[0].skillName> — <description>
+   2. <suggestions[1].skillName> — <description>
+   3. ...
+
+   Tell me a number (or the name) and I'll pull its safety report.
+   ```
+
+   When user picks one, re-call `security <picked.skillId>`.
+
+3. **If `matched === true`**, localize `detailsEn` and apply Display rule (STRICT):
    - Grade **A**: celebrate it. "✅ Clean bill of health. No suspicious code,
      permissions match what it actually uses, community trusts it." Make the
      user feel good about their choice.
@@ -777,11 +799,36 @@ Do not write to CONFIG.md directly — always go through shell commands.
 
 ## Error handling
 
-Common error codes from shell:
+Common error codes from shell / backend:
 
 - `missing_argument` — user didn't supply a required argument; re-prompt
 - `protected_skill` — tried to uninstall mapickii / mapick / tasa; refuse gracefully
 - `service_unreachable` — backend down or network fail; suggest retry later
 - `unknown_command` — typo or unsupported command; suggest `/mapickii help`
+- `consent_required` — user has not agreed to privacy policy yet; backend
+  returned **HTTP 403** with `{error: "consent_required", message, hint}`.
+  Affects `recommend` / `search` / `bundle` / `security` (any backend-derived
+  feature). Render this exact prompt (translate to user language):
+
+  ```
+  Mapickii needs your privacy consent before it can recommend, search,
+  or check skill safety. Your data stays anonymous (no account, no code,
+  no conversation content uploaded).
+
+  Two options:
+  1. Agree → /mapickii privacy consent-agree 1.0
+  2. Decline → /mapickii privacy consent-decline (local-only mode)
+
+  Once you choose, I'll continue with what you asked.
+  ```
+
+  After user picks agree → call `privacy consent-agree 1.0` then **retry the
+  original command they asked for**, don't make them re-type. After decline →
+  acknowledge local-only mode and stop the failed flow.
+
+- `disabled_in_local_mode` — user previously declined consent and is asking
+  for a backend feature. Refuse gracefully: "You're in local-only mode. To
+  enable recommendations / search / bundle / security, run
+  `/mapickii privacy consent-agree 1.0`." Do NOT silently retry.
 
 Render error reason in the user's language. Don't echo the JSON verbatim.
